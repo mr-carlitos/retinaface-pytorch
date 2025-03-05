@@ -105,7 +105,8 @@ if __name__ == '__main__':
     scale = scale.to(device)
     tic = time.time()
     #loc: (1, 26240, 4)
-    
+
+
     #conf: (1, 26240, 2)
     #landms: (1, 26240, 10)
     loc, conf, landms = net(img)  # forward pass
