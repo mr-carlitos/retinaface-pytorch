@@ -70,8 +70,11 @@ class RetinaFace(nn.Module):
             backbone = models.resnet50(pretrained=cfg['pretrain'])
             print("Loaded ResNet50 as backbone :)")
 
+        #self.body -> First layer type where the inputs get fed through. It uses the backbone. 'return_layers': {'layer2': 1, 'layer3': 2, 'layer4': 3}.
         self.body = _utils.IntermediateLayerGetter(backbone, cfg['return_layers'])
+        # in_channel = 256
         in_channels_stage2 = cfg['in_channel']
+        #For FPN
         in_channels_list = [
             in_channels_stage2 * 2,
             in_channels_stage2 * 4,

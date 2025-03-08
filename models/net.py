@@ -54,7 +54,7 @@ class SSH(nn.Module):
 
     def forward(self, input):
         conv3X3 = self.conv3X3(input)
-
+        #TODO: Find out if using input here instead of conv3X3 is a bug
         conv5X5_1 = self.conv5X5_1(input)
         conv5X5 = self.conv5X5_2(conv5X5_1)
 
@@ -88,6 +88,7 @@ class FPN(nn.Module):
 
         up3 = F.interpolate(output3, size=[output2.size(2), output2.size(3)], mode="nearest")
         output2 = output2 + up3
+        #TODO: Find out why we use a conv layer with activation here, shouldn't it be one without, just as the guys in the FPN paper say?
         output2 = self.merge2(output2)
 
         up2 = F.interpolate(output2, size=[output1.size(2), output1.size(3)], mode="nearest")
