@@ -62,6 +62,7 @@ class SSH(nn.Module):
         conv7X7 = self.conv7x7_3(conv7X7_2)
 
         out = torch.cat([conv3X3, conv5X5, conv7X7], dim=1)
+        #TODO: Is this relu here necessary?
         out = F.relu(out)
         return out
 
@@ -86,6 +87,7 @@ class FPN(nn.Module):
         output2 = self.output2(input[1])
         output3 = self.output3(input[2])
 
+        #TODO: Is "mode=nearest" correct??
         up3 = F.interpolate(output3, size=[output2.size(2), output2.size(3)], mode="nearest")
         output2 = output2 + up3
         #TODO: Find out why we use a conv layer with activation here, shouldn't it be one without, just as the guys in the FPN paper say?

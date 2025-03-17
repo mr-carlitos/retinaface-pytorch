@@ -1,3 +1,8 @@
 /weights/Resnet50_Final.pth
 *.pth
 .idea
+*.npy
+*.pb
+*.params
+*.json
+*.pyc

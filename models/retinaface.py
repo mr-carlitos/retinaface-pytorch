@@ -4,6 +4,7 @@ import torchvision.models.detection.backbone_utils as backbone_utils
 import torchvision.models._utils as _utils
 import torch.nn.functional as F
 from collections import OrderedDict
+from data.config_transform import transform_layer_config
 
 from models.net import MobileNetV1 as MobileNetV1
 from models.net import FPN as FPN
@@ -52,26 +53,39 @@ class RetinaFace(nn.Module):
         :param phase: train or test.
         """
         super(RetinaFace,self).__init__()
+        self.cfg = cfg
         self.phase = phase
         backbone = None
-        if cfg['name'] == 'mobilenet0.25':
-            backbone = MobileNetV1()
-            if cfg['pretrain']:
-                checkpoint = torch.load("./weights/mobilenetV1X0.25_pretrain.tar", map_location=torch.device('cpu'))
-                from collections import OrderedDict
-                new_state_dict = OrderedDict()
-                for k, v in checkpoint['state_dict'].items():
-                    name = k[7:]  # remove module.
-                    new_state_dict[name] = v
-                # load params
-                backbone.load_state_dict(new_state_dict)
-        elif cfg['name'] == 'Resnet50':
-            import torchvision.models as models
-            backbone = models.resnet50(pretrained=cfg['pretrain'])
-            print("Loaded ResNet50 as backbone :)")
 
-        #self.body -> First layer type where the inputs get fed through. It uses the backbone. 'return_layers': {'layer2': 1, 'layer3': 2, 'layer4': 3}.
-        self.body = _utils.IntermediateLayerGetter(backbone, cfg['return_layers'])
+        ##### CARLOS CODE STARTS HERE #######################
+        if cfg['name'] == 'Resnet50-11k':
+            import importlib.util
+            import sys
+
+            # Load the module using importlib.util
+            spec = importlib.util.spec_from_file_location("MainModel", "./resnet-50-11k/resnet-50-ImageNet11k-final.py")
+            MainModel = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(MainModel)
+
+            # Register the module in sys.modules with the expected name
+            sys.modules["MainModel"] = MainModel
+
+            self.backbone = torch.load('./resnet-50-11k/resnet-50-ImageNet11k-final.pth').eval()#.cuda()
+
+        ##### CARLOS CODE ENDS HERE #######################
+
+        elif cfg['name'] == 'Resnet50-1k':
+            import torchvision.models as models
+            resnet_pytorched_backbone = models.resnet50(pretrained=cfg['pretrain'])
+            print("Loaded ResNet50-1k as backbone :)")
+            #self.body -> First layer type where the inputs get fed through. It uses the backbone. 'return_layers': {'layer2': 1, 'layer3': 2, 'layer4': 3}.
+            self.backbone = _utils.IntermediateLayerGetter(resnet_pytorched_backbone, cfg['return_layers'])
+        
+        else:
+            print("Invalid backbone!!")
+            self.backbone = None
+
+
         # in_channel = 256
         in_channels_stage2 = cfg['in_channel']
         #For FPN
@@ -109,7 +123,18 @@ class RetinaFace(nn.Module):
         return landmarkhead
 
     def forward(self,inputs):
-        out = self.body(inputs)
+        if self.cfg['name'] == 'Resnet50-11k':
+            out_raw = self.backbone.extract_features(inputs)
+            indices = transform_layer_config(self.cfg['return_layers'])
+            out_filtered = list(out_raw[i] for i in indices)
+
+            out = OrderedDict()
+            for i in range(len(indices)):
+                out[i] = out_filtered[i]
+
+        
+        else:
+            out = self.backbone(inputs)
 
         # FPN
         fpn = self.fpn(out)

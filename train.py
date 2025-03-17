@@ -26,9 +26,12 @@ parser.add_argument('--gamma', default=0.1, type=float, help='Gamma update for S
 parser.add_argument('--save_folder', default='./weights/', help='Location to save checkpoint models')
 
 args = parser.parse_args()
+torch.cuda.set_device(3)
 
 if not os.path.exists(args.save_folder):
     os.mkdir(args.save_folder)
+
+#TODO: Remove all mobile net stuff
 cfg = None
 if args.network == "mobile0.25":
     cfg = cfg_mnet
@@ -71,7 +74,9 @@ if args.resume_net is not None:
     net.load_state_dict(new_state_dict)
 
 if num_gpu > 1 and gpu_train:
-    net = torch.nn.DataParallel(net).cuda()
+    #TODO: Find out how to assign specific GPU indexes here, so I assign the GPUs that are not used currently on rolf
+    device_ids = [5, 7]  # list the GPU indices you want to use
+    net = torch.nn.DataParallel(net, device_ids=device_ids).cuda(device_ids[0])
 else:
     net = net.cuda()
 
