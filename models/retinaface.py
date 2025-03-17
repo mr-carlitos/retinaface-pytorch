@@ -63,16 +63,14 @@ class RetinaFace(nn.Module):
             import sys
 
             # Load the module using importlib.util
-            spec = importlib.util.spec_from_file_location("MainModel", "./resnet-50-11k/resnet-50-ImageNet11k-final.py")
+            spec = importlib.util.spec_from_file_location("MainModel", "./resnet-50-ImageNet11k-final.py")
             MainModel = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(MainModel)
 
             # Register the module in sys.modules with the expected name
             sys.modules["MainModel"] = MainModel
 
-            self.backbone = torch.load('./resnet-50-11k/resnet-50-ImageNet11k-final.pth').eval()#.cuda()
-
-        ##### CARLOS CODE ENDS HERE #######################
+            self.backbone = torch.load('./resnet-50-ImageNet11k-final.pth').eval()#.cuda()
 
         elif cfg['name'] == 'Resnet50-1k':
             import torchvision.models as models
@@ -84,6 +82,8 @@ class RetinaFace(nn.Module):
         else:
             print("Invalid backbone!!")
             self.backbone = None
+
+        ##### CARLOS CODE ENDS HERE #######################
 
 
         # in_channel = 256
@@ -123,6 +123,7 @@ class RetinaFace(nn.Module):
         return landmarkhead
 
     def forward(self,inputs):
+        ##### CARLOS CODE STARTS HERE #######################
         if self.cfg['name'] == 'Resnet50-11k':
             out_raw = self.backbone.extract_features(inputs)
             indices = transform_layer_config(self.cfg['return_layers'])
@@ -131,10 +132,10 @@ class RetinaFace(nn.Module):
             out = OrderedDict()
             for i in range(len(indices)):
                 out[i] = out_filtered[i]
-
-        
         else:
             out = self.backbone(inputs)
+
+        ##### CARLOS CODE ENDS HERE #######################
 
         # FPN
         fpn = self.fpn(out)

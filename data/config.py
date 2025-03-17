@@ -21,7 +21,7 @@ cfg_mnet = {
 }
 
 cfg_re50 = {
-    'name': 'Resnet50-11k',
+    'name': 'Resnet50-1k',
     #This means that for each feature map (corresponding to a particular scale), two square anchors are generated—one with a smaller size and one with a larger size.
     'min_sizes': [[16, 32], [64, 128], [256, 512]],
     'steps': [8, 16, 32],

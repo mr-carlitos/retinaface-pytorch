@@ -6,17 +6,17 @@ from PIL import Image
 import importlib.util
 import sys
 
-torch.cuda.set_device(3)
+torch.cuda.set_device(5)
 
 # Load the module using importlib.util
-spec = importlib.util.spec_from_file_location("MainModel", "./resnet-50-11k/resnet-50-ImageNet11k-final.py")
+spec = importlib.util.spec_from_file_location("MainModel", "./resnet-50-ImageNet11k-final.py")
 MainModel = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(MainModel)
 
 # Register the module in sys.modules with the expected name
 sys.modules["MainModel"] = MainModel
 
-model = torch.load('./resnet-50-11k/resnet-50-ImageNet11k-final.pth').cuda()
+model = torch.load('./resnet-50-ImageNet11k-final.pth').cuda()
 model.eval()
 
 np.random.seed(42)
