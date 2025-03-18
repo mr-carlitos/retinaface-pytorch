@@ -55,22 +55,33 @@ class RetinaFace(nn.Module):
         super(RetinaFace,self).__init__()
         self.cfg = cfg
         self.phase = phase
-        backbone = None
+
+        # in_channel = 256
+        in_channels_stage2 = cfg['in_channel']
 
         ##### CARLOS CODE STARTS HERE #######################
+        in_channels_list = None
+        self.backbone = None
         if cfg['name'] == 'Resnet50-11k':
             import importlib.util
             import sys
 
             # Load the module using importlib.util
-            spec = importlib.util.spec_from_file_location("MainModel", "./resnet-50-ImageNet11k-final.py")
+            spec = importlib.util.spec_from_file_location("MainModel", "./resnet-50-11k/resnet-50-ImageNet11k-final.py")
             MainModel = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(MainModel)
 
             # Register the module in sys.modules with the expected name
             sys.modules["MainModel"] = MainModel
 
-            self.backbone = torch.load('./resnet-50-ImageNet11k-final.pth').eval()#.cuda()
+            self.backbone = torch.load('./resnet-50-11k/resnet-50-ImageNet11k-final.pth').eval()#.cuda()
+
+            # For FPN
+            in_channels_list = [
+                in_channels_stage2,
+                in_channels_stage2 * 2,
+                in_channels_stage2 * 8,
+            ]
 
         elif cfg['name'] == 'Resnet50-1k':
             import torchvision.models as models
@@ -78,6 +89,13 @@ class RetinaFace(nn.Module):
             print("Loaded ResNet50-1k as backbone :)")
             #self.body -> First layer type where the inputs get fed through. It uses the backbone. 'return_layers': {'layer2': 1, 'layer3': 2, 'layer4': 3}.
             self.backbone = _utils.IntermediateLayerGetter(resnet_pytorched_backbone, cfg['return_layers'])
+
+            # For FPN
+            in_channels_list = [
+                in_channels_stage2 * 2,
+                in_channels_stage2 * 4,
+                in_channels_stage2 * 8,
+            ]
         
         else:
             print("Invalid backbone!!")
@@ -85,15 +103,6 @@ class RetinaFace(nn.Module):
 
         ##### CARLOS CODE ENDS HERE #######################
 
-
-        # in_channel = 256
-        in_channels_stage2 = cfg['in_channel']
-        #For FPN
-        in_channels_list = [
-            in_channels_stage2 * 2,
-            in_channels_stage2 * 4,
-            in_channels_stage2 * 8,
-        ]
         out_channels = cfg['out_channel']
         self.fpn = FPN(in_channels_list,out_channels)
         self.ssh1 = SSH(out_channels, out_channels)

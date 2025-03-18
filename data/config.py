@@ -21,7 +21,7 @@ cfg_mnet = {
 }
 
 cfg_re50 = {
-    'name': 'Resnet50-1k',
+    'name': 'Resnet50-11k',
     #This means that for each feature map (corresponding to a particular scale), two square anchors are generated—one with a smaller size and one with a larger size.
     'min_sizes': [[16, 32], [64, 128], [256, 512]],
     'steps': [8, 16, 32],
@@ -36,8 +36,9 @@ cfg_re50 = {
     'decay2': 90,
     'image_size': 640,
     'pretrain': True,
+    'introduce_P6': True,
     #layer1 == C2, layer2 == C3, layer3 == C4, layer4 == C5
-    'return_layers': {'layer1': 1, 'layer2': 2, 'layer3': 3, 'layer4': 4},
+    'return_layers': {'layer1' : 1, 'layer2': 2, 'layer3': 3, 'layer4': 4},
     'in_channel': 256,
     'out_channel': 256
 }

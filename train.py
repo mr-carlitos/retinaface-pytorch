@@ -26,7 +26,7 @@ parser.add_argument('--gamma', default=0.1, type=float, help='Gamma update for S
 parser.add_argument('--save_folder', default='./weights/', help='Location to save checkpoint models')
 
 args = parser.parse_args()
-torch.cuda.set_device(3)
+torch.cuda.set_device(4)
 
 if not os.path.exists(args.save_folder):
     os.mkdir(args.save_folder)
