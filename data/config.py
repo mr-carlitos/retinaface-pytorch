@@ -24,6 +24,7 @@ cfg_re50 = {
     'name': 'Resnet50-11k',
     #This means that for each feature map (corresponding to a particular scale), two square anchors are generated—one with a smaller size and one with a larger size.
     'min_sizes': [[16, 32], [64, 128], [256, 512]],
+    #TODO: Check if we need this "steps" attribute, since we already regulate the feature maps attribute and I guess one can infer the step size from the feature maps.
     'steps': [8, 16, 32],
     'variance': [0.1, 0.2],
     'clip': False,
@@ -38,6 +39,7 @@ cfg_re50 = {
     'pretrain': True,
     'introduce_P6': True,
     #layer1 == C2, layer2 == C3, layer3 == C4, layer4 == C5
+    #TODO: change return_layers to feature_maps, which is a list input (e.g., [1,2,3,4] or [1,2,4]). Not that the values go from 1 to 4.
     'return_layers': {'layer1' : 1, 'layer2': 2, 'layer3': 3, 'layer4': 4},
     'in_channel': 256,
     'out_channel': 256

@@ -6,11 +6,8 @@ import torch.nn.functional as F
 from collections import OrderedDict
 from data.config_transform import transform_layer_config
 
-from models.net import MobileNetV1 as MobileNetV1
 from models.net import FPN as FPN
 from models.net import SSH as SSH
-
-
 
 class ClassHead(nn.Module):
     def __init__(self,inchannels=512,num_anchors=3):
@@ -133,6 +130,7 @@ class RetinaFace(nn.Module):
 
     def forward(self,inputs):
         ##### CARLOS CODE STARTS HERE #######################
+        #TODO: Move these lines of code to a function so that RetinaFace object is clean
         if self.cfg['name'] == 'Resnet50-11k':
             out_raw = self.backbone.extract_features(inputs)
             indices = transform_layer_config(self.cfg['return_layers'])
