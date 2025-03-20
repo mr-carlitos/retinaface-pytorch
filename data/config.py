@@ -40,7 +40,9 @@ cfg_re50 = {
     'introduce_P6': True,
     #layer1 == C2, layer2 == C3, layer3 == C4, layer4 == C5
     #TODO: change return_layers to feature_maps, which is a list input (e.g., [1,2,3,4] or [1,2,4]). Not that the values go from 1 to 4.
-    'return_layers': {'layer1' : 1, 'layer2': 2, 'layer3': 3, 'layer4': 4},
+    #'return_layers': {'layer1' : 1, 'layer2': 2, 'layer3': 3, 'layer4': 4},
+    #0 == C2, 1== C3, 2 == C4, 3 == C5
+    'return_layers': [0, 1, 2, 3],
     'in_channel': 256,
     'out_channel': 256
 }

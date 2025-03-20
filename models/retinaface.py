@@ -71,7 +71,12 @@ class RetinaFace(nn.Module):
             # Register the module in sys.modules with the expected name
             sys.modules["MainModel"] = MainModel
 
-            self.backbone = torch.load('./resnet-50-11k/resnet-50-ImageNet11k-final.pth').eval()#.cuda()
+            self.backbone = torch.load('./resnet-50-11k/resnet-50-ImageNet11k-final.pth')
+            self.backbone.train()
+
+            for param in self.backbone.parameters():
+                print(param)
+                print(param.requires_grad)
 
             # For FPN
             in_channels_list = [
@@ -85,7 +90,8 @@ class RetinaFace(nn.Module):
             resnet_pytorched_backbone = models.resnet50(pretrained=cfg['pretrain'])
             print("Loaded ResNet50-1k as backbone :)")
             #self.body -> First layer type where the inputs get fed through. It uses the backbone. 'return_layers': {'layer2': 1, 'layer3': 2, 'layer4': 3}.
-            self.backbone = _utils.IntermediateLayerGetter(resnet_pytorched_backbone, cfg['return_layers'])
+            layer_dict = transform_layer_config(cfg['return_layers'])
+            self.backbone = _utils.IntermediateLayerGetter(resnet_pytorched_backbone, layer_dict)
 
             # For FPN
             in_channels_list = [
@@ -95,13 +101,20 @@ class RetinaFace(nn.Module):
             ]
         
         else:
-            print("Invalid backbone!!")
             self.backbone = None
+            raise Exception("Invalid 'name' parameter in config. No valid backbone!")
+
+        if self.cfg['introduce_P6'] and 3 in self.cfg['return_layers']:
+            self.P6 = self.create_P6()
+
 
         ##### CARLOS CODE ENDS HERE #######################
 
         out_channels = cfg['out_channel']
         self.fpn = FPN(in_channels_list,out_channels)
+
+        #TODO: Create a list of ssh's, depending on if P6 is true and length of cfg.return_layers
+        self.ssh_list = None
         self.ssh1 = SSH(out_channels, out_channels)
         self.ssh2 = SSH(out_channels, out_channels)
         self.ssh3 = SSH(out_channels, out_channels)
@@ -133,19 +146,26 @@ class RetinaFace(nn.Module):
         #TODO: Move these lines of code to a function so that RetinaFace object is clean
         if self.cfg['name'] == 'Resnet50-11k':
             out_raw = self.backbone.extract_features(inputs)
-            indices = transform_layer_config(self.cfg['return_layers'])
+            indices = self.cfg['return_layers'].copy().sort()
             out_filtered = list(out_raw[i] for i in indices)
 
             out = OrderedDict()
-            for i in range(len(indices)):
-                out[i] = out_filtered[i]
+            for idx, key in enumerate(indices):
+                out[key] = out_filtered[idx]
+
         else:
             out = self.backbone(inputs)
 
         ##### CARLOS CODE ENDS HERE #######################
 
         # FPN
-        fpn = self.fpn(out)
+        out_copy = out.copy()
+        fpn = self.fpn(out_copy)
+
+        if hasattr(self, 'P6'):
+            feature_P6 = self.P6(out[3])
+            #TODO: Incorporate P6 into computation
+            fpn.append(feature_P6)
 
         # SSH
         feature1 = self.ssh1(fpn[0])
@@ -162,3 +182,16 @@ class RetinaFace(nn.Module):
         else:
             output = (bbox_regressions, F.softmax(classifications, dim=-1), ldm_regressions)
         return output
+
+    ##### CARLOS CODE STARTS HERE #######################
+    def create_P6(self):
+        # Assuming C5 features have in_channels = cfg['in_channel'] * 8
+        in_channels_C5 = self.cfg['in_channel'] * 8
+        out_channels = self.cfg['out_channel']
+        P6 = nn.Conv2d(in_channels_C5, out_channels, kernel_size=3, stride=2, padding=1)
+        # Initialize weights using Xavier initialization
+        nn.init.xavier_uniform_(P6.weight)
+        if P6.bias is not None:
+            nn.init.constant_(P6.bias, 0)
+        return P6
+    ##### CARLOS CODE ENDS HERE #######################
