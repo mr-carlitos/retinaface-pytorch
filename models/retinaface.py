@@ -56,9 +56,12 @@ class RetinaFace(nn.Module):
         # in_channel = 256
         in_channels_stage2 = cfg['in_channel']
 
+
         ##### CARLOS CODE STARTS HERE #######################
+        number_of_featuremaps = len(self.cfg['return_layers'])
         in_channels_list = None
         self.backbone = None
+
         if cfg['name'] == 'Resnet50-11k':
             import importlib.util
             import sys
@@ -106,7 +109,7 @@ class RetinaFace(nn.Module):
 
         if self.cfg['introduce_P6'] and 3 in self.cfg['return_layers']:
             self.P6 = self.create_P6()
-
+            number_of_featuremaps += 1
 
         ##### CARLOS CODE ENDS HERE #######################
 
@@ -114,14 +117,14 @@ class RetinaFace(nn.Module):
         self.fpn = FPN(in_channels_list,out_channels)
 
         #TODO: Create a list of ssh's, depending on if P6 is true and length of cfg.return_layers
-        self.ssh_list = None
-        self.ssh1 = SSH(out_channels, out_channels)
-        self.ssh2 = SSH(out_channels, out_channels)
-        self.ssh3 = SSH(out_channels, out_channels)
+        self.ssh_list = nn.ModuleList()
 
-        self.ClassHead = self._make_class_head(fpn_num=3, inchannels=cfg['out_channel'])
-        self.BboxHead = self._make_bbox_head(fpn_num=3, inchannels=cfg['out_channel'])
-        self.LandmarkHead = self._make_landmark_head(fpn_num=3, inchannels=cfg['out_channel'])
+        for num_featuremap in range(number_of_featuremaps):
+            self.ssh_list.append(SSH(out_channels, out_channels))
+
+        self.ClassHead = self._make_class_head(fpn_num=number_of_featuremaps, inchannels=cfg['out_channel'])
+        self.BboxHead = self._make_bbox_head(fpn_num=number_of_featuremaps, inchannels=cfg['out_channel'])
+        self.LandmarkHead = self._make_landmark_head(fpn_num=number_of_featuremaps, inchannels=cfg['out_channel'])
 
     def _make_class_head(self,fpn_num=3,inchannels=64,anchor_num=2):
         classhead = nn.ModuleList()
@@ -168,6 +171,7 @@ class RetinaFace(nn.Module):
             fpn.append(feature_P6)
 
         # SSH
+        # TODO: Fix this code, as it does not work right now
         feature1 = self.ssh1(fpn[0])
         feature2 = self.ssh2(fpn[1])
         feature3 = self.ssh3(fpn[2])
