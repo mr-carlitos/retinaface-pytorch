@@ -154,8 +154,6 @@ class RetinaFace(nn.Module):
         else:
             out = self.backbone(inputs)
 
-        ##### CARLOS CODE ENDS HERE #######################
-
         # FPN
         fpn = self.fpn(out)
 
@@ -170,6 +168,8 @@ class RetinaFace(nn.Module):
         for context_module in self.context_modules_list:
             features.append(context_module(fpn[i]))
             i += 1
+
+        ##### CARLOS CODE ENDS HERE #######################
 
         bbox_regressions = torch.cat([self.BboxHead[i](feature) for i, feature in enumerate(features)], dim=1)
         classifications = torch.cat([self.ClassHead[i](feature) for i, feature in enumerate(features)],dim=1)
