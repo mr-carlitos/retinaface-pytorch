@@ -26,18 +26,14 @@ parser.add_argument('--gamma', default=0.1, type=float, help='Gamma update for S
 parser.add_argument('--save_folder', default='./weights/', help='Location to save checkpoint models')
 
 args = parser.parse_args()
-torch.cuda.set_device(4)
+torch.cuda.set_device(3)
 
 if not os.path.exists(args.save_folder):
     os.mkdir(args.save_folder)
 
-#TODO: Remove all mobile net stuff
-cfg = None
-if args.network == "mobile0.25":
-    cfg = cfg_mnet
-elif args.network == "resnet50":
-    cfg = cfg_re50
+cfg = cfg_re50
 
+#TODO: Check if this rgb_mean is true
 rgb_mean = (104, 117, 123) # bgr order
 num_classes = 2
 img_dim = cfg['image_size']

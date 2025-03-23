@@ -54,7 +54,7 @@ class SSH(nn.Module):
 
     def forward(self, input):
         conv3X3 = self.conv3X3(input)
-        #TODO: Find out if using input here instead of conv3X3 is a bug
+
         conv5X5_1 = self.conv5X5_1(input)
         conv5X5 = self.conv5X5_2(conv5X5_1)
 
@@ -62,40 +62,54 @@ class SSH(nn.Module):
         conv7X7 = self.conv7x7_3(conv7X7_2)
 
         out = torch.cat([conv3X3, conv5X5, conv7X7], dim=1)
+
         #TODO: Is this relu here necessary?
         out = F.relu(out)
         return out
 
 class FPN(nn.Module):
-    def __init__(self,in_channels_list,out_channels):
+    def __init__(self, in_channels_list, out_channels):
         super(FPN,self).__init__()
         leaky = 0
         if (out_channels <= 64):
             leaky = 0.1
-        self.output1 = conv_bn1X1(in_channels_list[0], out_channels, stride = 1, leaky = leaky)
-        self.output2 = conv_bn1X1(in_channels_list[1], out_channels, stride = 1, leaky = leaky)
-        self.output3 = conv_bn1X1(in_channels_list[2], out_channels, stride = 1, leaky = leaky)
 
-        self.merge1 = conv_bn(out_channels, out_channels, leaky = leaky)
-        self.merge2 = conv_bn(out_channels, out_channels, leaky = leaky)
+        in_channels_list = list(reversed(in_channels_list))
+
+        ##### CARLOS CODE STARTS HERE #######################
+        self.fpn_list = nn.ModuleList()
+        for in_channel in in_channels_list:
+            self.fpn_list.append(conv_bn1X1(in_channel, out_channels, stride = 1, leaky = leaky))
+
+        self.merge_list = nn.ModuleList()
+        for _ in range(len(in_channels_list)-1):
+            self.merge_list.append(conv_bn(out_channels, out_channels, leaky = leaky))
 
     def forward(self, input):
         # names = list(input.keys())
         input = list(input.values())
+        input = list(reversed(input))
 
-        output1 = self.output1(input[0])
-        output2 = self.output2(input[1])
-        output3 = self.output3(input[2])
+        output_list = list()
+        for inp, layer in zip(input, self.fpn_list):
+            output_list.append(layer(inp))
 
-        #TODO: Is "mode=nearest" correct??
-        up3 = F.interpolate(output3, size=[output2.size(2), output2.size(3)], mode="nearest")
-        output2 = output2 + up3
-        #TODO: Find out why we use a conv layer with activation here, shouldn't it be one without, just as the guys in the FPN paper say?
-        output2 = self.merge2(output2)
+        last_layer_output = output_list[0]
+        final_outputs = list()
 
-        up2 = F.interpolate(output2, size=[output1.size(2), output1.size(3)], mode="nearest")
-        output1 = output1 + up2
-        output1 = self.merge1(output1)
-
-        out = [output1, output2, output3]
-        return out
+        for idx in range(1, len(input)):
+            if idx == 1:
+                output_variable = last_layer_output
+            else:
+                output_variable = final_outputs[idx-2]
+            # TODO: Is "mode=nearest" correct??
+            # size(2): Height
+            # size(3): Width
+            up = F.interpolate(output_variable, size=[output_list[idx].size(2), output_list[idx].size(3)], mode="nearest")
+            addition = output_list[idx] + up
+            # TODO: Find out why we use a conv layer with activation here, shouldn't it be one without, just as the guys in the FPN paper say?
+            merged = self.merge_list[idx-1](addition)
+            final_outputs.append(merged)
+        final_outputs = list(reversed(final_outputs))
+        final_outputs.append(last_layer_output)
+        return final_outputs
