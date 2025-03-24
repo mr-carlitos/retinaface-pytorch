@@ -41,6 +41,7 @@ class SSH(nn.Module):
     def __init__(self, in_channel, out_channel):
         super(SSH, self).__init__()
         assert out_channel % 4 == 0
+        #setting the leak parameter to 0 makes leaky ReLU equivalent to the standard ReLU
         leaky = 0
         if (out_channel <= 64):
             leaky = 0.1
@@ -63,8 +64,10 @@ class SSH(nn.Module):
 
         out = torch.cat([conv3X3, conv5X5, conv7X7], dim=1)
 
-        #TODO: Is this relu here necessary?
         out = F.relu(out)
+        # Apply DCN if enabled
+        #if self.use_dcn:
+        #    out = self.dcn(out)
         return out
 
 class FPN(nn.Module):
@@ -102,7 +105,6 @@ class FPN(nn.Module):
                 output_variable = last_layer_output
             else:
                 output_variable = final_outputs[idx-2]
-            # TODO: Is "mode=nearest" correct??
             # size(2): Height
             # size(3): Width
             up = F.interpolate(output_variable, size=[output_list[idx].size(2), output_list[idx].size(3)], mode="nearest")

@@ -170,7 +170,6 @@ class RetinaFace(nn.Module):
             i += 1
 
         ##### CARLOS CODE ENDS HERE #######################
-
         bbox_regressions = torch.cat([self.BboxHead[i](feature) for i, feature in enumerate(features)], dim=1)
         classifications = torch.cat([self.ClassHead[i](feature) for i, feature in enumerate(features)],dim=1)
         ldm_regressions = torch.cat([self.LandmarkHead[i](feature) for i, feature in enumerate(features)], dim=1)
@@ -183,7 +182,7 @@ class RetinaFace(nn.Module):
 
     ##### CARLOS CODE STARTS HERE #######################
     def create_P6(self):
-        # Assuming C5 features have in_channels = cfg['in_channel'] * 8
+        # Assuming C5 features have in_channels = cfg['in_channel'] * 8 = 2048
         in_channels_C5 = self.cfg['in_channel'] * 8
         out_channels = self.cfg['out_channel']
         P6 = nn.Conv2d(in_channels_C5, out_channels, kernel_size=3, stride=2, padding=1)
