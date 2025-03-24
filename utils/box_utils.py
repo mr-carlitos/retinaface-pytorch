@@ -114,18 +114,19 @@ def match(threshold, truths, priors, variances, labels, landms, loc_t, conf_t, l
         The matched indices corresponding to 1)location 2)confidence 3)landm preds.
     """
     # jaccard index
+    # we basically compare EACH of the truths with EACH of the 102'300 priors. First, we convert the priors from cx, cy, s_kx, s_ky to (xmin, ymin, xmax, ymax)
+    # overlaps has Shape: [box_a.size(0), box_b.size(0)] which means [AmountOfTruthBoxes, 102'300]
     overlaps = jaccard(
         truths,
         point_form(priors)
     )
-    # (Bipartite Matching)
-    # [1,num_objects] best prior for each ground truth
 
     #best_prior_overlap holds the highest IoU for each ground-truth box, best_prior_idx contains the index of the prior that gives that maximum overlap
     best_prior_overlap, best_prior_idx = overlaps.max(1, keepdim=True)
 
     # ignore hard gt
     # The function only keeps ground-truth boxes that have at least one prior with an overlap of 0.2 or higher.
+    # I guess this 0.2 indexing is some kind of pre-filtering
     valid_gt_idx = best_prior_overlap[:, 0] >= 0.2
     best_prior_idx_filter = best_prior_idx[valid_gt_idx, :]
     if best_prior_idx_filter.shape[0] <= 0:
@@ -134,7 +135,7 @@ def match(threshold, truths, priors, variances, labels, landms, loc_t, conf_t, l
         conf_t[idx] = 0
         return
 
-    # [1,num_priors] best ground truth for each prior
+    # [1, num_priors] best ground truth for each prior
     # best_truth_overlap (shape [n_priors]) contains the highest IoU that each prior has with any ground-truth box.
     # best_truth_idx (shape [n_priors]) contains the index of the ground-truth box that best matches each prior.
     best_truth_overlap, best_truth_idx = overlaps.max(0, keepdim=True)

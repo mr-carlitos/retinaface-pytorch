@@ -29,16 +29,11 @@ class MultiBoxLoss(nn.Module):
         See: https://arxiv.org/pdf/1512.02325.pdf for more details.
     """
 
-    def __init__(self, num_classes, overlap_thresh, prior_for_matching, bkg_label, neg_mining, neg_pos, neg_overlap, encode_target):
+    def __init__(self, num_classes, overlap_thresh, neg_pos):
         super(MultiBoxLoss, self).__init__()
         self.num_classes = num_classes
         self.threshold = overlap_thresh
-        self.background_label = bkg_label
-        self.encode_target = encode_target
-        self.use_prior_for_matching = prior_for_matching
-        self.do_neg_mining = neg_mining
         self.negpos_ratio = neg_pos
-        self.neg_overlap = neg_overlap
         self.variance = [0.1, 0.2]
 
     def forward(self, predictions, priors, targets):
@@ -60,6 +55,7 @@ class MultiBoxLoss(nn.Module):
         num_priors = (priors.size(0))
 
         # match priors (default boxes) and ground truth boxes
+        # torch.Tensor() -> This creates a tensor with uninitialized memory. The values in the tensor are essentially garbage/random values that were in memory at that location
         loc_t = torch.Tensor(num, num_priors, 4)
         landm_t = torch.Tensor(num, num_priors, 10)
         conf_t = torch.LongTensor(num, num_priors)

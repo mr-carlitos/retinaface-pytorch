@@ -261,6 +261,7 @@ class preproc(object):
         image_t, boxes_t, landm_t = _mirror(image_t, boxes_t, landm_t)
 
         height, width, _ = image_t.shape
+        # In _resize_subtract_mean, the image gets its 640 x 640 format.
         image_t = _resize_subtract_mean(image_t, self.img_dim, self.rgb_means)
 
         # Convert the absolute pixel coordinates of bounding boxes and landmarks into relative coordinates (i.e., values between 0 and 1).
