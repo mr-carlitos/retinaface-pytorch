@@ -3,8 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 from utils.box_utils import match, log_sum_exp
-from data import cfg_mnet
-GPU = cfg_mnet['gpu_train']
+from data import cfg_re50
+GPU = cfg_re50['gpu_train']
 
 class MultiBoxLoss(nn.Module):
     """SSD Weighted Loss Function
@@ -29,11 +29,12 @@ class MultiBoxLoss(nn.Module):
         See: https://arxiv.org/pdf/1512.02325.pdf for more details.
     """
 
-    def __init__(self, num_classes, overlap_thresh, neg_pos):
+    def __init__(self, num_classes, iou_threshold_background, iou_threshold_foreground, neg_pos_ratio):
         super(MultiBoxLoss, self).__init__()
         self.num_classes = num_classes
-        self.threshold = overlap_thresh
-        self.negpos_ratio = neg_pos
+        self.threshold_background = iou_threshold_background
+        self.threshold_foreground = iou_threshold_foreground
+        self.negpos_ratio = neg_pos_ratio
         self.variance = [0.1, 0.2]
 
     def forward(self, predictions, priors, targets):
@@ -64,13 +65,19 @@ class MultiBoxLoss(nn.Module):
             labels = targets[idx][:, -1].data
             landms = targets[idx][:, 4:14].data
             defaults = priors.data
-            match(self.threshold, truths, defaults, self.variance, labels, landms, loc_t, conf_t, landm_t, idx)
+
+            # match’s role is to assign each of the many predefined anchor (prior) boxes to a ground truth box (or mark it as background) based on the
+            # intersection over union (IoU) overlap.
+            # It then encodes the targets (box offsets and landmark offsets) that the network will learn to predict.
+            # Everything is saved in the loc_t, conf_t and landm_t tensors
+            match(self.threshold_background, self.threshold_foreground, truths, defaults, self.variance, labels, landms, loc_t, conf_t, landm_t, idx)
         if GPU:
             loc_t = loc_t.cuda()
             conf_t = conf_t.cuda()
             landm_t = landm_t.cuda()
 
         zeros = torch.tensor(0).cuda()
+
         # landm Loss (Smooth L1)
         # Shape: [batch,num_priors,10]
 
@@ -80,8 +87,10 @@ class MultiBoxLoss(nn.Module):
         # counts positive anchors per image
         num_pos_landm = pos1.long().sum(1, keepdim=True)
 
-        # total number of positive anchors (with a minimum of 1 to avoid division by zero).
+        # total number of positive anchors (with a minimum of 1 to avoid division by zero). N1 incorporates the pos anchors from ALL samples in the batch
         N1 = max(num_pos_landm.data.sum().float(), 1)
+
+        #### Now, for the first time in this function, we start working with the model output predictions
 
         # expand_as(landm_data) replicates the last dimension 10 times
         pos_idx1 = pos1.unsqueeze(pos1.dim()).expand_as(landm_data)
@@ -94,6 +103,9 @@ class MultiBoxLoss(nn.Module):
         # Now: conf_t contains 1 (for face boxes) or 0 (background) for each anchor for each image in the current batch
         pos = conf_t != zeros
         conf_t[pos] = 1
+
+        num_pos_test = pos.long().sum(1, keepdim=True)
+        N_test = max(num_pos_test.data.sum().float(), 1)
 
         # Localization Loss (Smooth L1)
         # Shape: [batch,num_priors,4]
@@ -110,16 +122,16 @@ class MultiBoxLoss(nn.Module):
         # batch_conf.gather(1, conf_t.view(-1, 1)) selects, for each anchor (each row in batch_conf), the predicted confidence value corresponding to its target class as given in conf_t.
         # loss_c computes, for each anchor, the negative log-likelihood of the target class. This is done by subtracting the logit for the true class from the log-sum-exp of all logits.
         # get a per-anchor “loss” (which is then used to rank negatives for hard negative mining)
-        # But it's actually is mathematically equivalent to what F.cross_entropy()
+        # But it's actually is mathematically equivalent to what F.cross_entropy() (This is equivalent to computing the negative log-likelihood for the true class when the softmax function is applied.)
         loss_c = log_sum_exp(batch_conf) - batch_conf.gather(1, conf_t.view(-1, 1))
 
         # Hard Negative Mining
         # Hard negative mining selects the negatives that the network is getting most wrong—that is, the negatives with very high loss values.
         loss_c[pos.view(-1, 1)] = 0 # filter out pos boxes for now
         loss_c = loss_c.view(num, -1)
-        _, loss_idx = loss_c.sort(1, descending=True)
+        test_loss_values_negatives_sorted, loss_idx = loss_c.sort(1, descending=True)
         # This second sort doesn't sort the losses again; instead, it tells you the rank (position) of each anchor in the descending order.
-        _, idx_rank = loss_idx.sort(1)
+        test_idx_rank_values, idx_rank = loss_idx.sort(1)
         num_pos = pos.long().sum(1, keepdim=True)
         num_neg = torch.clamp(self.negpos_ratio*num_pos, max=pos.size(1)-1)
         neg = idx_rank < num_neg.expand_as(idx_rank)

@@ -1,25 +1,5 @@
 # config.py
 
-cfg_mnet = {
-    'name': 'mobilenet0.25',
-    'min_sizes': [[16, 32], [64, 128], [256, 512]],
-    'steps': [8, 16, 32],
-    'variance': [0.1, 0.2],
-    'clip': False,
-    'loc_weight': 2.0,
-    'gpu_train': True,
-    'batch_size': 32,
-    'ngpu': 1,
-    'epoch': 250,
-    'decay1': 190,
-    'decay2': 220,
-    'image_size': 640,
-    'pretrain': True,
-    'return_layers': {'stage1': 1, 'stage2': 2, 'stage3': 3},
-    'in_channel': 32,
-    'out_channel': 64
-}
-
 cfg_re50 = {
     'name': 'Resnet50-11k',
     #This means that for each feature map (corresponding to a particular scale), two square anchors are generated—one with a smaller size and one with a larger size.
@@ -52,6 +32,8 @@ cfg_re50 = {
     'return_layers': [0, 1, 2, 3],
     'in_channel': 256,
     'out_channel': 256,
-    'anchor_num': 3
+    'anchor_num': 3,
+    'iou_threshold_background' : 0.3,
+    'iou_threshold_foreground': 0.5,
+    'neg_pos_ratio': 3
 }
-

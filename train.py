@@ -5,7 +5,7 @@ import torch.optim as optim
 import torch.backends.cudnn as cudnn
 import argparse
 import torch.utils.data as data
-from data import WiderFaceDetection, detection_collate, preproc, cfg_mnet, cfg_re50
+from data import WiderFaceDetection, detection_collate, preproc, cfg_re50
 from layers.modules import MultiBoxLoss
 from layers.functions.prior_box import PriorBox
 import time
@@ -78,9 +78,12 @@ else:
 
 cudnn.benchmark = True
 
+iou_threshold_background = cfg['iou_threshold_background']
+iou_threshold_foreground = cfg['iou_threshold_foreground']
+neg_pos_ratio = cfg['neg_pos_ratio']
 
 optimizer = optim.SGD(net.parameters(), lr=initial_lr, momentum=momentum, weight_decay=weight_decay)
-criterion = MultiBoxLoss(num_classes, 0.35, 7)
+criterion = MultiBoxLoss(num_classes, iou_threshold_background, iou_threshold_foreground, neg_pos_ratio)
 
 priorbox = PriorBox(cfg, image_size=(img_dim, img_dim))
 with torch.no_grad():
