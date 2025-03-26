@@ -230,6 +230,9 @@ def _resize_subtract_mean(image, insize, rgb_mean):
 
     #Resize to size, defined in config.py (or cfg variable)
     image = cv2.resize(image, (insize, insize), interpolation=interp_method)
+    random_value = random.random()
+    if random_value < 0.1:
+        cv2.imwrite('./image_outputs/output_preproc_mean_not_substracted_'+str(random_value)+'.jpg', image)
     image = image.astype(np.float32)
     #remove mean. Subtracting the mean centers the pixel values around zero. This normalization step speeds up training and improves convergence.
     image -= rgb_mean
