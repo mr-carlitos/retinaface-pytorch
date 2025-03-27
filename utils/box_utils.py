@@ -1,7 +1,6 @@
 import torch
 import numpy as np
 
-
 def point_form(boxes):
     """ Convert prior_boxes to (xmin, ymin, xmax, ymax)
     representation for comparison to point form ground truth data.
@@ -68,7 +67,7 @@ def matrix_iof(a, b):
     return area_i / np.maximum(area_a[:, np.newaxis], 1)
 
 
-def match(threshold_background, threshold_foreground, truths, priors, variances, labels, landms, loc_t, conf_t, landm_t, idx):
+def match(threshold_background, threshold_foreground, truths, priors, variances, labels, loc_t, conf_t, idx):
     """Match each prior box with the ground truth box of the highest jaccard
     overlap, encode the bounding boxes, then return the matched indices
     corresponding to both confidence and location preds.
@@ -80,10 +79,8 @@ def match(threshold_background, threshold_foreground, truths, priors, variances,
         variances: (tensor) Variances corresponding to each prior coord,
             Shape: [num_priors, 4].
         labels: (tensor) All the class labels for the image, Shape: [num_obj].
-        landms: (tensor) Ground truth landms, Shape [num_obj, 10].
         loc_t: (tensor) Tensor to be filled w/ endcoded location targets.
         conf_t: (tensor) Tensor to be filled w/ matched indices for conf preds.
-        landm_t: (tensor) Tensor to be filled w/ endcoded landm targets.
         idx: (int) current batch index
     Return:
         The matched indices corresponding to 1)location 2)confidence 3)landm preds.
@@ -159,7 +156,6 @@ def match(threshold_background, threshold_foreground, truths, priors, variances,
 
     # b. Confidence Targets
     conf = labels[best_truth_idx]              # Shape: [num_priors]
-
     # Be aware! This statement does not mean that all entries in conf are >= 0. Only those who have a very low IoU will be 0. But there are still those which have a high IoU and are marked as -1.
     conf[best_truth_overlap < threshold_background] = 0    # label as background
 
@@ -169,11 +165,6 @@ def match(threshold_background, threshold_foreground, truths, priors, variances,
     #conf[ignore_mask] = -2
 
     conf_t[idx] = conf  # [num_priors] top class label for each prior
-
-    # c. Landmark Targets
-    matches_landm = landms[best_truth_idx]
-    landm = encode_landm(matches_landm, priors, variances)
-    landm_t[idx] = landm
 
 
 def encode(matched, priors, variances):
@@ -225,35 +216,6 @@ def encode(matched, priors, variances):
     # return target for smooth_l1_loss
     return torch.cat([g_cxcy, g_wh], 1)  # [num_priors,4]
 
-def encode_landm(matched, priors, variances):
-    """Encode the variances from the priorbox layers into the ground truth boxes
-    we have matched (based on jaccard overlap) with the prior boxes.
-    Args:
-        matched: (tensor) Coords of ground truth for each prior in point-form
-            Shape: [num_priors, 10].
-        priors: (tensor) Prior boxes in center-offset form
-            Shape: [num_priors,4].
-        variances: (list[float]) Variances of priorboxes
-    Return:
-        encoded landm (tensor), Shape: [num_priors, 10]
-    """
-
-    # dist b/t match center and prior's center
-    matched = torch.reshape(matched, (matched.size(0), 5, 2))
-    priors_cx = priors[:, 0].unsqueeze(1).expand(matched.size(0), 5).unsqueeze(2)
-    priors_cy = priors[:, 1].unsqueeze(1).expand(matched.size(0), 5).unsqueeze(2)
-    priors_w = priors[:, 2].unsqueeze(1).expand(matched.size(0), 5).unsqueeze(2)
-    priors_h = priors[:, 3].unsqueeze(1).expand(matched.size(0), 5).unsqueeze(2)
-    priors = torch.cat([priors_cx, priors_cy, priors_w, priors_h], dim=2)
-    g_cxcy = matched[:, :, :2] - priors[:, :, :2]
-    # encode variance
-    g_cxcy /= (variances[0] * priors[:, :, 2:])
-    # g_cxcy /= priors[:, :, 2:]
-    g_cxcy = g_cxcy.reshape(g_cxcy.size(0), -1)
-    # return target for smooth_l1_loss
-    return g_cxcy
-
-
 # Adapted from https://github.com/Hakuyume/chainer-ssd
 def decode(loc, priors, variances):
     """Decode locations from predictions using priors to undo
@@ -276,27 +238,6 @@ def decode(loc, priors, variances):
     boxes[:, :2] -= boxes[:, 2:] / 2 # Shift from center to top-left
     boxes[:, 2:] += boxes[:, :2] # Compute bottom-right from top-left and dimensions
     return boxes
-
-def decode_landm(pre, priors, variances):
-    """Decode landm from predictions using priors to undo
-    the encoding we did for offset regression at train time.
-    Args:
-        pre (tensor): landm predictions for loc layers,
-            Shape: [num_priors,10]
-        priors (tensor): Prior boxes in center-offset form.
-            Shape: [num_priors,4].
-        variances: (list[float]) Variances of priorboxes
-    Return:
-        decoded landm predictions
-    """
-    landms = torch.cat((priors[:, :2] + pre[:, :2] * variances[0] * priors[:, 2:],
-                        priors[:, :2] + pre[:, 2:4] * variances[0] * priors[:, 2:],
-                        priors[:, :2] + pre[:, 4:6] * variances[0] * priors[:, 2:],
-                        priors[:, :2] + pre[:, 6:8] * variances[0] * priors[:, 2:],
-                        priors[:, :2] + pre[:, 8:10] * variances[0] * priors[:, 2:],
-                        ), dim=1)
-    return landms
-
 
 def log_sum_exp(x):
     """Utility function for computing log_sum_exp while determining

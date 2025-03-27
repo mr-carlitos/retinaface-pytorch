@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import torchvision.models.detection.backbone_utils as backbone_utils
 import torchvision.models._utils as _utils
 import torch.nn.functional as F
 from collections import OrderedDict
@@ -31,17 +30,6 @@ class BboxHead(nn.Module):
         out = out.permute(0,2,3,1).contiguous()
 
         return out.view(out.shape[0], -1, 4)
-
-class LandmarkHead(nn.Module):
-    def __init__(self, inchannels, num_anchors):
-        super(LandmarkHead, self).__init__()
-        self.conv1x1 = nn.Conv2d(inchannels, num_anchors*10, kernel_size=(1,1), stride=1, padding=0)
-
-    def forward(self,x):
-        out = self.conv1x1(x)
-        out = out.permute(0,2,3,1).contiguous()
-
-        return out.view(out.shape[0], -1, 10)
 
 class RetinaFace(nn.Module):
     def __init__(self, cfg = None, phase = 'train'):
@@ -117,8 +105,6 @@ class RetinaFace(nn.Module):
 
         self.ClassHead = self._make_class_head(fpn_num=number_of_featuremaps, inchannels=out_channels_fpn, anchor_num=anchor_num)
         self.BboxHead = self._make_bbox_head(fpn_num=number_of_featuremaps, inchannels=out_channels_fpn, anchor_num=anchor_num)
-        self.LandmarkHead = self._make_landmark_head(fpn_num=number_of_featuremaps, inchannels=out_channels_fpn, anchor_num=anchor_num)
-
         ##### CARLOS CODE ENDS HERE #######################
 
     def _make_class_head(self, fpn_num, inchannels, anchor_num):
@@ -132,12 +118,6 @@ class RetinaFace(nn.Module):
         for i in range(fpn_num):
             bboxhead.append(BboxHead(inchannels, anchor_num))
         return bboxhead
-
-    def _make_landmark_head(self, fpn_num, inchannels, anchor_num):
-        landmarkhead = nn.ModuleList()
-        for i in range(fpn_num):
-            landmarkhead.append(LandmarkHead(inchannels, anchor_num))
-        return landmarkhead
 
     def forward(self,inputs):
         ##### CARLOS CODE STARTS HERE #######################
@@ -172,12 +152,11 @@ class RetinaFace(nn.Module):
         ##### CARLOS CODE ENDS HERE #######################
         bbox_regressions = torch.cat([self.BboxHead[i](feature) for i, feature in enumerate(features)], dim=1)
         classifications = torch.cat([self.ClassHead[i](feature) for i, feature in enumerate(features)],dim=1)
-        ldm_regressions = torch.cat([self.LandmarkHead[i](feature) for i, feature in enumerate(features)], dim=1)
 
         if self.phase == 'train':
-            output = (bbox_regressions, classifications, ldm_regressions)
+            output = (bbox_regressions, classifications)
         else:
-            output = (bbox_regressions, F.softmax(classifications, dim=-1), ldm_regressions)
+            output = (bbox_regressions, F.softmax(classifications, dim=-1))
         return output
 
     ##### CARLOS CODE STARTS HERE #######################

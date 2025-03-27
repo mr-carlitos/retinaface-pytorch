@@ -15,7 +15,6 @@ cfg_re50 = {
     # The variance list of parameters is in fact an abuse of terms. Instead it indicates and contains precomputed standard deviations of the landmark and bounding box targets. What the code is doing is some sort of ad-hoc normalization of the targets.
     'variance': [0.1, 0.2],
     'clip': False,
-    'loc_weight': 2.0,
     'gpu_train': True,
     'batch_size': 2,
     'ngpu': 1,

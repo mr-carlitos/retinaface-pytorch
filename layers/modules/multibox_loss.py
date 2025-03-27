@@ -50,7 +50,7 @@ class MultiBoxLoss(nn.Module):
                 shape: [batch_size,num_objs,5] (last idx is the label).
         """
         #conf_data is (batch_size, anchors, 2) -> so the innerst element has size 2 -> but its not that these two elements sum to 1
-        loc_data, conf_data, landm_data = predictions
+        loc_data, conf_data = predictions
         priors = priors
         num = loc_data.size(0)
         num_priors = (priors.size(0))
@@ -58,47 +58,22 @@ class MultiBoxLoss(nn.Module):
         # match priors (default boxes) and ground truth boxes
         # torch.Tensor() -> This creates a tensor with uninitialized memory. The values in the tensor are essentially garbage/random values that were in memory at that location
         loc_t = torch.Tensor(num, num_priors, 4)
-        landm_t = torch.Tensor(num, num_priors, 10)
         conf_t = torch.LongTensor(num, num_priors)
         for idx in range(num):
             truths = targets[idx][:, :4].data
             labels = targets[idx][:, -1].data
-            landms = targets[idx][:, 4:14].data
             defaults = priors.data
 
             # match’s role is to assign each of the many predefined anchor (prior) boxes to a ground truth box (or mark it as background) based on the
             # intersection over union (IoU) overlap.
             # It then encodes the targets (box offsets and landmark offsets) that the network will learn to predict.
             # Everything is saved in the loc_t, conf_t and landm_t tensors
-            match(self.threshold_background, self.threshold_foreground, truths, defaults, self.variance, labels, landms, loc_t, conf_t, landm_t, idx)
+            match(self.threshold_background, self.threshold_foreground, truths, defaults, self.variance, labels, loc_t, conf_t, idx)
         if GPU:
             loc_t = loc_t.cuda()
             conf_t = conf_t.cuda()
-            landm_t = landm_t.cuda()
 
         zeros = torch.tensor(0).cuda()
-
-        # landm Loss (Smooth L1)
-        # Shape: [batch,num_priors,10]
-
-        # pos1 identifies all anchors labeled as positive (i.e. matched to a face).
-        pos1 = conf_t > zeros
-
-        # counts positive anchors per image
-        num_pos_landm = pos1.long().sum(1, keepdim=True)
-
-        # total number of positive anchors (with a minimum of 1 to avoid division by zero). N1 incorporates the pos anchors from ALL samples in the batch
-        N1 = max(num_pos_landm.data.sum().float(), 1)
-
-        #### Now, for the first time in this function, we start working with the model output predictions
-
-        # expand_as(landm_data) replicates the last dimension 10 times
-        pos_idx1 = pos1.unsqueeze(pos1.dim()).expand_as(landm_data)
-
-        # Using broadcasting (via unsqueeze and expand_as), the predicted landmark offsets (landm_data) and the target landmark offsets (landm_t) are selected only for the positive anchors.
-        landm_p = landm_data[pos_idx1].view(-1, 10)
-        landm_t = landm_t[pos_idx1].view(-1, 10)
-        loss_landm = F.smooth_l1_loss(landm_p, landm_t, reduction='sum')
 
         # Now: conf_t contains 1 (for face boxes) or 0 (background) for each anchor for each image in the current batch
         pos = conf_t != zeros
@@ -150,6 +125,5 @@ class MultiBoxLoss(nn.Module):
         N = max(num_pos.data.sum().float(), 1)
         loss_l /= N
         loss_c /= N
-        loss_landm /= N1
 
-        return loss_l, loss_c, loss_landm
+        return loss_l, loss_c
