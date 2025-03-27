@@ -164,6 +164,8 @@ def match(threshold_background, threshold_foreground, truths, priors, variances,
     conf[best_truth_overlap < threshold_background] = 0    # label as background
 
     #ignore_mask = (best_truth_overlap >= threshold_background) & (best_truth_overlap <= threshold_foreground)
+    #true_count = ignore_mask.sum()
+    #print(true_count)
     #conf[ignore_mask] = -2
 
     conf_t[idx] = conf  # [num_priors] top class label for each prior

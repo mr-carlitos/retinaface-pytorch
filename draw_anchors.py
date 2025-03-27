@@ -10,7 +10,7 @@ from data import cfg_re50
 chosen_feature_map_index = 4
 
 # Set the drawing mode: choose from 'border', 'center', or 'both'
-draw_mode = 'center'
+draw_mode = 'both'
 
 # --- Utility: Decode anchors from center-size to (xmin, ymin, xmax, ymax) ---
 def point_form(boxes):
