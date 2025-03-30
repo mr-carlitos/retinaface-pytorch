@@ -75,12 +75,23 @@ class MultiBoxLoss(nn.Module):
 
         zeros = torch.tensor(0).cuda()
 
-        # Now: conf_t contains 1 (for face boxes) or 0 (background) for each anchor for each image in the current batch
-        pos = conf_t != zeros
-        conf_t[pos] = 1
+        ignored_tensor = torch.tensor(-1).cuda()
+        ignored = conf_t == ignored_tensor
+        #variable for debugging, not used by code
+        ignored_sum = ignored.long().sum(1, keepdim = True)
 
-        num_pos_test = pos.long().sum(1, keepdim=True)
-        N_test = max(num_pos_test.data.sum().float(), 1)
+        # pos holds the indices of the positives
+        pos = conf_t > zeros
+        # variable for debugging, not used by code
+        pos_sum = pos.long().sum(1, keepdim=True)
+
+        #needed for the gather() function later. We will temporarily set the conf values of the ignored entries to 1.
+        pos_and_ignored = conf_t != zeros
+        conf_t[pos_and_ignored] = 1
+
+        background = conf_t == zeros
+        # variable for debugging, not used by code
+        background_sum = background.long().sum(1, keepdim=True)
 
         # Localization Loss (Smooth L1)
         # Shape: [batch,num_priors,4]
@@ -98,11 +109,15 @@ class MultiBoxLoss(nn.Module):
         # loss_c computes, for each anchor, the negative log-likelihood of the target class. This is done by subtracting the logit for the true class from the log-sum-exp of all logits.
         # get a per-anchor “loss” (which is then used to rank negatives for hard negative mining)
         # But it's actually is mathematically equivalent to what F.cross_entropy() (This is equivalent to computing the negative log-likelihood for the true class when the softmax function is applied.)
+        #TODO: In the current setup, gather() triggers a CUDA error, because I allowed conf_t to have -1 values.
         loss_c = log_sum_exp(batch_conf) - batch_conf.gather(1, conf_t.view(-1, 1))
 
         # Hard Negative Mining
         # Hard negative mining selects the negatives that the network is getting most wrong—that is, the negatives with very high loss values.
-        loss_c[pos.view(-1, 1)] = 0 # filter out pos boxes for now
+        pos_view = pos.view(-1, 1)
+        ignored_view = ignored.view(-1, 1)
+        loss_c[pos_view] = 0 # filter out pos boxes for now
+        loss_c[ignored_view] = 0 # filter out ignored boxes
         loss_c = loss_c.view(num, -1)
         test_loss_values_negatives_sorted, loss_idx = loss_c.sort(1, descending=True)
         # This second sort doesn't sort the losses again; instead, it tells you the rank (position) of each anchor in the descending order.
@@ -115,6 +130,8 @@ class MultiBoxLoss(nn.Module):
         pos_idx = pos.unsqueeze(2).expand_as(conf_data)
         neg_idx = neg.unsqueeze(2).expand_as(conf_data)
         # .gt(0) (greater than zero) -> creates a tensor that is nonzero (1 or 2) wherever an anchor is either positive or selected as a negative.
+        pos_plus_neg = pos+neg
+        pos_plus_neg_idx = pos_idx+neg_idx
         conf_p = conf_data[(pos_idx+neg_idx).gt(0)].view(-1,self.num_classes)
         targets_weighted = conf_t[(pos+neg).gt(0)]
 

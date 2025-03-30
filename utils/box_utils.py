@@ -159,10 +159,14 @@ def match(threshold_background, threshold_foreground, truths, priors, variances,
     # Be aware! This statement does not mean that all entries in conf are >= 0. Only those who have a very low IoU will be 0. But there are still those which have a high IoU and are marked as -1.
     conf[best_truth_overlap < threshold_background] = 0    # label as background
 
-    #ignore_mask = (best_truth_overlap >= threshold_background) & (best_truth_overlap <= threshold_foreground)
+    ignore_mask = (best_truth_overlap >= threshold_background) & (best_truth_overlap <= threshold_foreground)
     #true_count = ignore_mask.sum()
     #print(true_count)
-    #conf[ignore_mask] = -2
+    #print(ignore_mask)
+    #print(best_truth_overlap[ignore_mask])
+
+    #Mark ignored anchors with -1
+    conf[ignore_mask] = -1
 
     conf_t[idx] = conf  # [num_priors] top class label for each prior
 

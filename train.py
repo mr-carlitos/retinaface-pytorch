@@ -34,7 +34,7 @@ if not os.path.exists(args.save_folder):
 cfg = cfg_re50
 
 #TODO: Check if this rgb_mean is true
-rgb_mean = (104, 117, 123) # bgr order
+rgb_mean = (104, 117, 124) # bgr order
 num_classes = 2
 img_dim = cfg['image_size']
 num_gpu = cfg['ngpu']
