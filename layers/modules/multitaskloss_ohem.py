@@ -1,22 +1,22 @@
+##### This code was mostly written by the original PyTorch authors
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
-from utils.box_utils import match, log_sum_exp
+from utils.box_utils import match_ohem, log_sum_exp
 from data import cfg_re50
 GPU = cfg_re50['gpu_train']
 
-class MultiBoxLoss(nn.Module):
+class MultiTaskLossWithOHEM(nn.Module):
     """SSD Weighted Loss Function
     Compute Targets:
         1) Produce Confidence Target Indices by matching  ground truth boxes
            with (default) 'priorboxes' that have jaccard index > threshold parameter
-           (default threshold: 0.5).
         2) Produce localization target by 'encoding' variance into offsets of ground
            truth boxes and their matched  'priorboxes'.
         3) Hard negative mining to filter the excessive number of negative examples
            that comes with using a large number of default bounding boxes.
-           (default negative:positive ratio 3:1)
+
     Objective Loss:
         L(x,c,l,g) = (Lconf(x, c) + αLloc(x,l,g)) / N
         Where, Lconf is the CrossEntropy Loss and Lloc is the SmoothL1 Loss
@@ -29,13 +29,13 @@ class MultiBoxLoss(nn.Module):
         See: https://arxiv.org/pdf/1512.02325.pdf for more details.
     """
 
-    def __init__(self, num_classes, iou_threshold_background, iou_threshold_foreground, neg_pos_ratio):
-        super(MultiBoxLoss, self).__init__()
+    def __init__(self, num_classes, iou_threshold_background, iou_threshold_foreground, neg_pos_ratio, variance):
+        super(MultiTaskLossWithOHEM, self).__init__()
         self.num_classes = num_classes
         self.threshold_background = iou_threshold_background
         self.threshold_foreground = iou_threshold_foreground
         self.negpos_ratio = neg_pos_ratio
-        self.variance = [0.1, 0.2]
+        self.variance = variance
 
     def forward(self, predictions, priors, targets):
         """Multibox Loss
@@ -68,7 +68,7 @@ class MultiBoxLoss(nn.Module):
             # intersection over union (IoU) overlap.
             # It then encodes the targets (box offsets and landmark offsets) that the network will learn to predict.
             # Everything is saved in the loc_t, conf_t and landm_t tensors
-            match(self.threshold_background, self.threshold_foreground, truths, defaults, self.variance, labels, loc_t, conf_t, idx)
+            match_ohem(self.threshold_background, self.threshold_foreground, truths, defaults, self.variance, labels, loc_t, conf_t, idx)
         if GPU:
             loc_t = loc_t.cuda()
             conf_t = conf_t.cuda()
@@ -109,7 +109,6 @@ class MultiBoxLoss(nn.Module):
         # loss_c computes, for each anchor, the negative log-likelihood of the target class. This is done by subtracting the logit for the true class from the log-sum-exp of all logits.
         # get a per-anchor “loss” (which is then used to rank negatives for hard negative mining)
         # But it's actually is mathematically equivalent to what F.cross_entropy() (This is equivalent to computing the negative log-likelihood for the true class when the softmax function is applied.)
-        #TODO: In the current setup, gather() triggers a CUDA error, because I allowed conf_t to have -1 values.
         loss_c = log_sum_exp(batch_conf) - batch_conf.gather(1, conf_t.view(-1, 1))
 
         # Hard Negative Mining
@@ -130,8 +129,6 @@ class MultiBoxLoss(nn.Module):
         pos_idx = pos.unsqueeze(2).expand_as(conf_data)
         neg_idx = neg.unsqueeze(2).expand_as(conf_data)
         # .gt(0) (greater than zero) -> creates a tensor that is nonzero (1 or 2) wherever an anchor is either positive or selected as a negative.
-        pos_plus_neg = pos+neg
-        pos_plus_neg_idx = pos_idx+neg_idx
         conf_p = conf_data[(pos_idx+neg_idx).gt(0)].view(-1,self.num_classes)
         targets_weighted = conf_t[(pos+neg).gt(0)]
 

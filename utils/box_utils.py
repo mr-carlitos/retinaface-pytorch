@@ -66,8 +66,7 @@ def matrix_iof(a, b):
     area_a = np.prod(a[:, 2:] - a[:, :2], axis=1)
     return area_i / np.maximum(area_a[:, np.newaxis], 1)
 
-
-def match(threshold_background, threshold_foreground, truths, priors, variances, labels, loc_t, conf_t, idx):
+def match_ohem(threshold_background, threshold_foreground, truths, priors, variances, labels, loc_t, conf_t, idx):
     """Match each prior box with the ground truth box of the highest jaccard
     overlap, encode the bounding boxes, then return the matched indices
     corresponding to both confidence and location preds.
@@ -138,7 +137,6 @@ def match(threshold_background, threshold_foreground, truths, priors, variances,
     #   (set to 2, which is above any possible IoU value) so that it will definitely be selected.
     # Purpose: This guarantees that each ground truth box is “assigned” at least to one prior regardless of the standard threshold.
     best_truth_overlap.index_fill_(0, best_prior_idx_filter, 2)
-    # TODO refactor: index  best_prior_idx with long tensor
     # The loop forces the assignment so that the best prior for each ground truth is linked with that specific ground truth
     # Force Each Ground-Truth Box to be Matched with Its Best Prior
     # Purpose: This step ensures that every ground truth is represented in the target assignment
@@ -156,18 +154,102 @@ def match(threshold_background, threshold_foreground, truths, priors, variances,
 
     # b. Confidence Targets
     conf = labels[best_truth_idx]              # Shape: [num_priors]
-    # Be aware! This statement does not mean that all entries in conf are >= 0. Only those who have a very low IoU will be 0. But there are still those which have a high IoU and are marked as -1.
     conf[best_truth_overlap < threshold_background] = 0    # label as background
-
     ignore_mask = (best_truth_overlap >= threshold_background) & (best_truth_overlap <= threshold_foreground)
-    #true_count = ignore_mask.sum()
-    #print(true_count)
-    #print(ignore_mask)
-    #print(best_truth_overlap[ignore_mask])
 
     #Mark ignored anchors with -1
     conf[ignore_mask] = -1
 
+    conf_t[idx] = conf  # [num_priors] top class label for each prior
+
+def match_focal_loss(threshold_background, truths, priors, variances, labels, loc_t, conf_t, idx):
+    """Match each prior box with the ground truth box of the highest jaccard
+    overlap, encode the bounding boxes, then return the matched indices
+    corresponding to both confidence and location preds.
+    Args:
+        threshold_background: (float) The overlap threshold used when matching boxes to background
+        truths: (tensor) Ground truth boxes, Shape: [num_obj, 4].
+        priors: (tensor) Prior boxes from priorbox layers, Shape: [n_priors,4].
+        variances: (tensor) Variances corresponding to each prior coord,
+            Shape: [num_priors, 4].
+        labels: (tensor) All the class labels for the image, Shape: [num_obj].
+        loc_t: (tensor) Tensor to be filled w/ endcoded location targets.
+        conf_t: (tensor) Tensor to be filled w/ matched indices for conf preds.
+        idx: (int) current batch index
+    Return:
+        The matched indices corresponding to 1)location 2)confidence 3)landm preds.
+    """
+
+    #1. Compute IoU Overlaps
+    # jaccard index
+    # we basically compare EACH of the truths with EACH of the 102'300 priors. First, we convert the priors from cx, cy, s_kx, s_ky to (xmin, ymin, xmax, ymax)
+    # overlaps has Shape: [box_a.size(0), box_b.size(0)] which means [AmountOfTruthBoxes, 102'300]
+    overlaps = jaccard(
+        truths,
+        point_form(priors)
+    )
+
+    # 2. For Each Ground Truth, Find Its Best-Matching Prior
+    #best_prior_overlap holds the highest IoU for each ground-truth box, best_prior_idx contains the index of the prior that gives that maximum overlap
+    best_prior_overlap, best_prior_idx = overlaps.max(1, keepdim=True)
+
+    ##### CARLOS CODE STARTS HERE #######################
+    # Check for duplicates in best_prior_idx
+    unique_vals, counts = best_prior_idx.unique(return_counts=True)
+    duplicate_vals = unique_vals[counts > 1]
+    if duplicate_vals.numel() > 0:
+        print(f"WARNING: Duplicate indices found in best_prior_idx: {duplicate_vals.tolist()}")
+    ##### CARLOS CODE ENDS HERE #######################
+
+
+    # 3. Filter Out Ground Truth Boxes with Insufficient Overlap
+    # ignore hard gt
+    # The function only keeps ground-truth boxes that have at least one prior with an overlap of 0.2 or higher.
+    # I guess this 0.2 indexing is some kind of pre-filtering
+    valid_gt_idx = best_prior_overlap[:, 0] >= 0.2
+    best_prior_idx_filter = best_prior_idx[valid_gt_idx, :]
+    if best_prior_idx_filter.shape[0] <= 0:
+        # sets every element in that access matrix (loc_t[idx]) to 0.
+        loc_t[idx] = 0
+        conf_t[idx] = 0
+        return
+
+    # 4. For Each Prior, Find Its Best-Matching Ground Truth
+    # [1, num_priors] best ground truth for each prior
+    # best_truth_overlap (shape [n_priors]) contains the highest IoU that each prior has with any ground-truth box.
+    # best_truth_idx (shape [n_priors]) contains the index of the ground-truth box that best matches each prior.
+    best_truth_overlap, best_truth_idx = overlaps.max(0, keepdim=True)
+    best_truth_idx.squeeze_(0)
+    best_truth_overlap.squeeze_(0)
+    best_prior_idx.squeeze_(1)
+    best_prior_idx_filter.squeeze_(1)
+    best_prior_overlap.squeeze_(1)
+
+    # 5. Force Each Ground Truth Box to Match With Its Best Prior
+    # Docs: Tensor.index_fill_(dim, index, value)
+    # Fills the elements of the self tensor with value by selecting the indices in the order given in index.
+    # index_fill_ is used to force the best matching prior (from the bipartite matching step) to have a very high overlap
+    #   (set to 2, which is above any possible IoU value) so that it will definitely be selected.
+    # Purpose: This guarantees that each ground truth box is “assigned” at least to one prior regardless of the standard threshold.
+    best_truth_overlap.index_fill_(0, best_prior_idx_filter, 2)
+    # The loop forces the assignment so that the best prior for each ground truth is linked with that specific ground truth
+    # Force Each Ground-Truth Box to be Matched with Its Best Prior
+    # Purpose: This step ensures that every ground truth is represented in the target assignment
+    # The initial overlaps.max(0, keepdim=True) finds the highest-overlap ground truth for each prior, but it doesn’t guarantee that EVERY ground truth is assigned to its best prior.
+    for j in range(best_prior_idx.size(0)):
+        best_truth_idx[best_prior_idx[j]] = j
+
+    # 6. Generate Final Target Tensors
+    # a. Localization Targets
+    matches = truths[best_truth_idx]            # Shape: [num_priors,4]
+    # Encode Localization: convert the ground-truth box coordinates (in matches) and the corresponding priors into regression targets.
+    # this means computing offsets from the prior’s center, plus log-scale differences for width and height.
+    loc = encode(matches, priors, variances)
+    loc_t[idx] = loc    # [num_priors,4] encoded offsets to learn
+
+    # b. Confidence Targets
+    conf = labels[best_truth_idx]              # Shape: [num_priors]
+    conf[best_truth_overlap < threshold_background] = 0    # label as background
     conf_t[idx] = conf  # [num_priors] top class label for each prior
 
 

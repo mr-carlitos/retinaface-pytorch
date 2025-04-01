@@ -16,11 +16,11 @@ cfg_re50 = {
     'variance': [0.1, 0.2],
     'clip': False,
     'gpu_train': True,
-    'batch_size': 2,
+    'batch_size': 6,
     'ngpu': 1,
-    'epoch': 100,
-    'decay1': 70,
-    'decay2': 90,
+    'epoch': 80,
+    'decay1': 55,
+    'decay2': 68,
     'image_size': 640,
     'pretrain': True,
     #For P6 to work, the 'return_layers' attribute must contain '3' in the list.
@@ -34,5 +34,7 @@ cfg_re50 = {
     'anchor_num': 3,
     'iou_threshold_background' : 0.3,
     'iou_threshold_foreground': 0.5,
-    'neg_pos_ratio': 3
+    'neg_pos_ratio': 3,
+    'focal_gamma' : 2.0,
+    'focal_alpha': 0.25
 }

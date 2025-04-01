@@ -1,3 +1,4 @@
+##### CARLOS CODE FILE ########
 from __future__ import print_function
 import os
 import torch
@@ -6,7 +7,7 @@ import torch.backends.cudnn as cudnn
 import argparse
 import torch.utils.data as data
 from data import WiderFaceDetection, detection_collate, preproc, cfg_re50
-from layers.modules import MultiBoxLoss
+from layers.modules import MultiTaskLossWithFocalLoss
 from layers.functions.prior_box import PriorBox
 import time
 import datetime
@@ -188,6 +189,7 @@ def save_checkpoint(net, optimizer, epoch, loss, args, is_best=False):
 
     # Save as latest.pth
     latest_path = os.path.join(args.save_folder, f"{cfg['name']}_latest.pth")
+    print(f"New latest.pth")
     torch.save(checkpoint, latest_path)
 
     # Save best model if applicable
@@ -242,11 +244,10 @@ def train(cfg, args):
                 print("Failed to load optimizer state")
 
     # Initialize loss function
-    criterion = MultiBoxLoss(
+    criterion = MultiTaskLossWithFocalLoss(
         num_classes=2,
-        overlap_thresh=cfg['iou_threshold_background'],
-        neg_pos=cfg['neg_pos_ratio'],
-        pos_overlap=cfg['iou_threshold_foreground']
+        iou_threshold_background=cfg['iou_threshold_background'],
+        variance = cfg['variance']
     )
 
     # Initialize prior boxes
@@ -256,7 +257,8 @@ def train(cfg, args):
         priors = priors.to(args.device)
 
     # Initialize dataset
-    print('Loading dataset...')
+    if args.rank == 0 or not args.distributed:
+        print('Loading dataset...')
     rgb_mean = (104, 117, 124)  # BGR order
     dataset = WiderFaceDetection(args.training_dataset, preproc(cfg['image_size'], rgb_mean))
 
@@ -418,9 +420,6 @@ if __name__ == '__main__':
 
     # Use ResNet-50 config
     cfg = cfg_re50
-
-    # Enable CUDNN benchmarking
-    cudnn.benchmark = True
 
     # Run training
     train(cfg, args)

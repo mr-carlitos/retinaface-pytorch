@@ -6,3 +6,5 @@
 *.params
 *.json
 *.pyc
+.env
+logs/

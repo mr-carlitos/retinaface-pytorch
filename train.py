@@ -6,7 +6,7 @@ import torch.backends.cudnn as cudnn
 import argparse
 import torch.utils.data as data
 from data import WiderFaceDetection, detection_collate, preproc, cfg_re50
-from layers.modules import MultiBoxLoss
+from layers.modules import MultiTaskLossWithOHEM, MultiTaskLossWithFocalLoss
 from layers.functions.prior_box import PriorBox
 import time
 import datetime
@@ -26,14 +26,14 @@ parser.add_argument('--gamma', default=0.1, type=float, help='Gamma update for S
 parser.add_argument('--save_folder', default='./weights/', help='Location to save checkpoint models')
 
 args = parser.parse_args()
-torch.cuda.set_device(3)
+torch.cuda.set_device(2)
 
 if not os.path.exists(args.save_folder):
     os.mkdir(args.save_folder)
 
 cfg = cfg_re50
 
-#TODO: Check if this rgb_mean is true
+
 rgb_mean = (104, 117, 124) # bgr order
 num_classes = 2
 img_dim = cfg['image_size']
@@ -80,10 +80,12 @@ cudnn.benchmark = True
 
 iou_threshold_background = cfg['iou_threshold_background']
 iou_threshold_foreground = cfg['iou_threshold_foreground']
-neg_pos_ratio = cfg['neg_pos_ratio']
+variances = cfg['variance']
+focal_gamma = cfg['focal_gamma']
+focal_alpha = cfg['focal_alpha']
 
 optimizer = optim.SGD(net.parameters(), lr=initial_lr, momentum=momentum, weight_decay=weight_decay)
-criterion = MultiBoxLoss(num_classes, iou_threshold_background, iou_threshold_foreground, neg_pos_ratio)
+criterion = MultiTaskLossWithFocalLoss(num_classes, iou_threshold_background, variances, focal_gamma, focal_alpha)
 
 priorbox = PriorBox(cfg, image_size=(img_dim, img_dim))
 with torch.no_grad():
