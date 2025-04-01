@@ -123,7 +123,7 @@ class RetinaFace(nn.Module):
         ##### CARLOS CODE STARTS HERE #######################
         #TODO: Move these lines of code to a function so that RetinaFace object is clean
         if self.cfg['name'] == 'Resnet50-11k':
-            out_raw = self.backbone.extract_features(inputs)
+            out_raw = self.backbone(inputs)
             indices = sorted(self.cfg['return_layers'].copy())
             out_filtered = list(out_raw[i] for i in indices)
 

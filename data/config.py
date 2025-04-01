@@ -16,7 +16,7 @@ cfg_re50 = {
     'variance': [0.1, 0.2],
     'clip': False,
     'gpu_train': True,
-    'batch_size': 6,
+    'batch_size': 4,
     'ngpu': 1,
     'epoch': 80,
     'decay1': 55,
