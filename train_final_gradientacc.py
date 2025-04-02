@@ -213,6 +213,7 @@ def train(cfg, args):
     """Main training function"""
     # Initialize model
     net = get_model(cfg, args)
+    accumulation_steps = cfg['accumulation_steps']
 
     # Initialize optimizer
     optimizer = optim.SGD(
@@ -289,6 +290,7 @@ def train(cfg, args):
         net.train()
 
         end = time.time()
+        optimizer.zero_grad()
 
         for iteration, (images, targets) in enumerate(data_loader):
             # Measure data loading time
@@ -313,17 +315,20 @@ def train(cfg, args):
 
             # Calculate loss
             loss_l, loss_c = criterion(out, priors, targets)
-            loss = loss_l + loss_c
+            loss = (loss_l + loss_c) / accumulation_steps
 
             # Update metrics
             losses.update(loss.item(), images.size(0))
             loc_losses.update(loss_l.item(), images.size(0))
             cls_losses.update(loss_c.item(), images.size(0))
 
-            # Backward pass and optimize
-            optimizer.zero_grad()
+            # Backward pass and optimizer
             loss.backward()
-            optimizer.step()
+
+            # Update model weights after accumulating gradients for accumulation_steps iterations
+            if (iteration + 1) % accumulation_steps == 0 or (iteration + 1 == len(data_loader)):
+                optimizer.step()
+                optimizer.zero_grad()
 
             # Measure elapsed time
             batch_time.update(time.time() - end)

@@ -16,7 +16,9 @@ cfg_re50 = {
     'variance': [0.1, 0.2],
     'clip': False,
     'gpu_train': True,
-    'batch_size': 12,
+    'batch_size': 9,
+    #For gradient accumulation
+    'accumulation_steps' : 2,
     'ngpu': 1,
     'apply_FPN': True,
     'epoch': 80,
