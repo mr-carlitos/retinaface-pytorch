@@ -4,7 +4,7 @@ import torchvision.models._utils as _utils
 import torch.nn.functional as F
 from collections import OrderedDict
 from data.config_transform import transform_layer_config
-
+from models.net import conv_bn1X1
 from models.net import FPN as FPN
 from models.net import SSH as SSH
 
@@ -94,7 +94,12 @@ class RetinaFace(nn.Module):
         # out_channels_fpn is 256
         out_channels_fpn = cfg['out_channel']
 
-        self.fpn = FPN(in_channels_list, out_channels_fpn)
+        if cfg['apply_FPN']:
+            self.fpn = FPN(in_channels_list, out_channels_fpn)
+        else:
+            self.conv1x1list = nn.ModuleList()
+            for layer_index in range(len(self.cfg['return_layers'])):
+                self.conv1x1list.append(conv_bn1X1(in_channels_list[layer_index], out_channels_fpn, stride = 1))
 
         self.context_modules_list = nn.ModuleList()
 
@@ -121,7 +126,6 @@ class RetinaFace(nn.Module):
 
     def forward(self,inputs):
         ##### CARLOS CODE STARTS HERE #######################
-        #TODO: Move these lines of code to a function so that RetinaFace object is clean
         if self.cfg['name'] == 'Resnet50-11k':
             out_raw = self.backbone(inputs)
             indices = sorted(self.cfg['return_layers'].copy())
@@ -134,19 +138,26 @@ class RetinaFace(nn.Module):
         else:
             out = self.backbone(inputs)
 
-        # FPN
-        fpn = self.fpn(out)
+        if self.cfg['apply_FPN']:
+            # FPN
+            intermediate = self.fpn(out)
+        else:
+            intermediate = list()
+            j = 0
+            for conv1x1 in self.conv1x1list:
+                intermediate.append(conv1x1(out[j]))
+                j += 1
 
         if self.cfg['introduce_P6'] and 3 in self.cfg['return_layers']:
             #Remember that out is a dict, not a list. So we need to do out[3]
             feature_P6 = self.P6(out[3])
-            fpn.append(feature_P6)
+            intermediate.append(feature_P6)
 
         # Context Module
         i = 0
         features = list()
         for context_module in self.context_modules_list:
-            features.append(context_module(fpn[i]))
+            features.append(context_module(intermediate[i]))
             i += 1
 
         ##### CARLOS CODE ENDS HERE #######################

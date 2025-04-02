@@ -136,8 +136,6 @@ def get_model(cfg, args):
 
     return net
 
-
-
 def get_data_loader(dataset, batch_size, args):
     """Create data loader based on distributed setting"""
     if args.distributed:
@@ -211,17 +209,10 @@ def adjust_learning_rate(optimizer, gamma, epoch, step_index, iteration, epoch_s
 
     return lr
 
-
-
 def train(cfg, args):
     """Main training function"""
     # Initialize model
     net = get_model(cfg, args)
-
-    # Initialize logger
-    writer = None
-    if args.rank == 0 or not args.distributed:
-        writer = SummaryWriter(log_dir=args.log_dir)
 
     # Initialize optimizer
     optimizer = optim.SGD(
@@ -352,13 +343,26 @@ def train(cfg, args):
                     f'Loc: {loc_losses.val:.4f} ({loc_losses.avg:.4f}) '
                     f'Cls: {cls_losses.val:.4f} ({cls_losses.avg:.4f})'
                 )
-
-                # Log to TensorBoard
-                if writer:
-                    writer.add_scalar('Loss/train', losses.val, global_iter)
-                    writer.add_scalar('Loss/loc', loc_losses.val, global_iter)
-                    writer.add_scalar('Loss/cls', cls_losses.val, global_iter)
-                    writer.add_scalar('Learning_rate', lr, global_iter)
+                # CSV logging (every 100 iterations)
+                if (iteration % 100 == 0 or iteration == len(data_loader) - 1):
+                    import csv
+                    csv_log_file = os.path.join(args.log_dir, "training_log.csv")
+                    # Write header if the CSV file doesn't exist
+                    if not os.path.exists(csv_log_file):
+                        with open(csv_log_file, 'w', newline='') as f:
+                            csv_writer = csv.writer(f)
+                            csv_writer.writerow(
+                                ["timestamp", "epoch", "iteration", "ETA", "total_loss", "loss_loc", "loss_cls", "lr"])
+                    # Get current timestamp in human-readable format (up to seconds)
+                    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    # ETA is computed as the estimated time remaining based on the average batch time
+                    eta_formatted = str(datetime.timedelta(seconds=int(eta)))
+                    # Append the current log values to the CSV file
+                    with open(csv_log_file, 'a', newline='') as f:
+                        csv_writer = csv.writer(f)
+                        csv_writer.writerow(
+                            [timestamp, epoch, iteration, eta_formatted, losses.val, loc_losses.val, cls_losses.val,
+                             lr])
 
         # Save checkpoint
         is_best = losses.avg < best_loss
@@ -378,9 +382,6 @@ def train(cfg, args):
             'args': args
         }, final_path)
         print(f"Final model saved to {final_path}")
-
-        if writer:
-            writer.close()
 
 
 class AverageMeter(object):

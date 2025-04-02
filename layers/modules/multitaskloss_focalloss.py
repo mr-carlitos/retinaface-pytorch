@@ -10,7 +10,7 @@ from torchvision.ops import sigmoid_focal_loss
 GPU = cfg_re50['gpu_train']
 
 class MultiTaskLossWithFocalLoss(nn.Module):
-    """SSD Weighted Loss Function
+    """Weighted Loss Function (inspired from SSD and Focal Loss)
     Compute Targets:
         1) Produce Confidence Target Indices by matching  ground truth boxes
            with (default) 'priorboxes' that have jaccard index > threshold parameter

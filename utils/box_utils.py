@@ -98,15 +98,6 @@ def match_ohem(threshold_background, threshold_foreground, truths, priors, varia
     #best_prior_overlap holds the highest IoU for each ground-truth box, best_prior_idx contains the index of the prior that gives that maximum overlap
     best_prior_overlap, best_prior_idx = overlaps.max(1, keepdim=True)
 
-    ##### CARLOS CODE STARTS HERE #######################
-    # Check for duplicates in best_prior_idx
-    unique_vals, counts = best_prior_idx.unique(return_counts=True)
-    duplicate_vals = unique_vals[counts > 1]
-    if duplicate_vals.numel() > 0:
-        print(f"WARNING: Duplicate indices found in best_prior_idx: {duplicate_vals.tolist()}")
-    ##### CARLOS CODE ENDS HERE #######################
-
-
     # 3. Filter Out Ground Truth Boxes with Insufficient Overlap
     # ignore hard gt
     # The function only keeps ground-truth boxes that have at least one prior with an overlap of 0.2 or higher.
@@ -192,15 +183,6 @@ def match_focal_loss(threshold_background, truths, priors, variances, labels, lo
     # 2. For Each Ground Truth, Find Its Best-Matching Prior
     #best_prior_overlap holds the highest IoU for each ground-truth box, best_prior_idx contains the index of the prior that gives that maximum overlap
     best_prior_overlap, best_prior_idx = overlaps.max(1, keepdim=True)
-
-    ##### CARLOS CODE STARTS HERE #######################
-    # Check for duplicates in best_prior_idx
-    unique_vals, counts = best_prior_idx.unique(return_counts=True)
-    duplicate_vals = unique_vals[counts > 1]
-    if duplicate_vals.numel() > 0:
-        print(f"WARNING: Duplicate indices found in best_prior_idx: {duplicate_vals.tolist()}")
-    ##### CARLOS CODE ENDS HERE #######################
-
 
     # 3. Filter Out Ground Truth Boxes with Insufficient Overlap
     # ignore hard gt
