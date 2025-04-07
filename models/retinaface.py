@@ -54,29 +54,34 @@ class RetinaFace(nn.Module):
         self.backbone = None
         in_channels_list = list()
 
-        if cfg['name'] == 'Resnet50-11k':
+        if cfg['backbone_name'] == 'Resnet50-11k':
             import importlib.util
             import sys
 
             # Load the module using importlib.util
-            spec = importlib.util.spec_from_file_location("MainModel", "./resnet-50-11k/resnet-50-ImageNet11k-final.py")
+            spec = importlib.util.spec_from_file_location("MainModel", "/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/resnet-50-11k/resnet-50-ImageNet11k-final.py")
             MainModel = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(MainModel)
 
             # Register the module in sys.modules with the expected name
             sys.modules["MainModel"] = MainModel
 
-            self.backbone = torch.load('./resnet-50-11k/resnet-50-ImageNet11k-final.pth')
+            self.backbone = torch.load('/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/resnet-50-11k/resnet-50-ImageNet11k-final.pth', weights_only=False)
             self.backbone.train()
 
-            # For FPN
-            for layer_idx in return_layers_sorted:
-                if layer_idx == 3:
-                    in_channels_list.append(int(in_channels_stage * (2**layer_idx)))
-                else:
-                    in_channels_list.append(int(in_channels_stage * (2**(layer_idx-1))))
+            if cfg['featuremaps_at_end_of_stage']:
+                # For FPN
+                for layer_idx in return_layers_sorted:
+                    in_channels_list.append(int(in_channels_stage * (2 ** layer_idx)))
+            else:
+                # For FPN
+                for layer_idx in return_layers_sorted:
+                    if layer_idx == 3:
+                        in_channels_list.append(int(in_channels_stage * (2**layer_idx)))
+                    else:
+                        in_channels_list.append(int(in_channels_stage * (2**(layer_idx-1))))
 
-        elif cfg['name'] == 'Resnet50-1k':
+        elif cfg['backbone_name'] == 'Resnet50-1k':
             import torchvision.models as models
             resnet_pytorched_backbone = models.resnet50(pretrained=cfg['pretrain'])
             print("Loaded ResNet50-1k as backbone :)")
@@ -90,7 +95,7 @@ class RetinaFace(nn.Module):
         
         else:
             self.backbone = None
-            raise Exception("Invalid 'name' parameter in config. No valid backbone!")
+            raise Exception("Invalid 'backbone-name' parameter in config. No valid backbone!")
         # out_channels_fpn is 256
         out_channels_fpn = cfg['out_channel']
 
@@ -126,7 +131,7 @@ class RetinaFace(nn.Module):
 
     def forward(self,inputs):
         ##### CARLOS CODE STARTS HERE #######################
-        if self.cfg['name'] == 'Resnet50-11k':
+        if self.cfg['backbone_name'] == 'Resnet50-11k':
             out_raw = self.backbone(inputs)
             indices = sorted(self.cfg['return_layers'].copy())
             out_filtered = list(out_raw[i] for i in indices)

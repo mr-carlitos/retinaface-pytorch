@@ -9,3 +9,10 @@
 .env
 logs/
 *.csv
+validation/widerface_*
+save-checkpoints
+*.so
+*.c
+*.jpg
+*.png
+widerface_evaluate/build/

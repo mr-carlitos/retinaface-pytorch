@@ -151,7 +151,7 @@ print(f"Standard deviation of differences: {np.std(abs_diff)}")
 
 feature_maps_mx = [get_intermediate_output(mod, dummy_data, i) for i in layer_list]
 #extract_features() returns a tuple, not a list
-feature_maps_torch = model.extract_features(x)
+feature_maps_torch = model.extract_features_as_mxnet(x)
 feature_maps_torch = [feature_maps_torch[i] for i in range(len(feature_maps_torch))]
 
 

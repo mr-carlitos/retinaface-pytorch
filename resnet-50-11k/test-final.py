@@ -25,7 +25,7 @@ dummy_data = np.random.rand(1, 3, 640, 640)
 # Convert to torch.Tensor
 x = torch.from_numpy(dummy_data).float().cuda()
 output = model(x)
-featuremaps = model.extract_features(x)
+featuremaps = model.extract_features_as_mxnet(x)
 print(output.shape)
 print(output)
 print(type(featuremaps))

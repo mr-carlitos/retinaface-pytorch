@@ -5,6 +5,7 @@ mail: tianhengcheng@gmail.com
 copyright@wondervictor
 """
 
+from __future__ import absolute_import
 import os
 import tqdm
 import pickle
@@ -12,7 +13,37 @@ import argparse
 import numpy as np
 from scipy.io import loadmat
 from bbox import bbox_overlaps
-#from IPython import embed
+import torch
+
+
+def np_around(array, num_decimals=0):
+    return array
+    # return np.around(array, decimals=num_decimals)
+
+
+def compute_iou(box_a, box_b):
+    x0 = np.maximum(box_a[:, 0], box_b[0])
+    y0 = np.maximum(box_a[:, 1], box_b[1])
+    x1 = np.minimum(box_a[:, 2], box_b[2])
+    y1 = np.minimum(box_a[:, 3], box_b[3])
+    # print ('x0', x0[0], x1[0], y0[0], y1[0], box_a[0], box_b[:])
+    # w = np.maximum(x1 - x0 + 1, 0)
+    w = np_around(x1 - x0 + 1)
+    # h = np.maximum(y1 - y0 + 1, 0)
+    h = np_around(y1 - y0 + 1)
+    inter = np_around(w * h)
+    area_a = (box_a[:, 2] - box_a[:, 0] + 1) * (box_a[:, 3] - box_a[:, 1] + 1)
+    area_a = np_around(area_a)
+    area_b = (box_b[2] - box_b[0] + 1) * (box_b[3] - box_b[1] + 1)
+    area_b = np_around(area_b)
+    iou = inter / (area_a + area_b - inter)
+    iou[w <= 0] = 0
+    iou[h <= 0] = 0
+    return iou
+
+
+def np_round(val, decimals=4):
+    return val
 
 
 def get_gt_boxes(gt_dir):
@@ -35,7 +66,6 @@ def get_gt_boxes(gt_dir):
 
 
 def get_gt_boxes_from_txt(gt_path, cache_dir):
-
     cache_file = os.path.join(cache_dir, 'gt_cache.pkl')
     if os.path.exists(cache_file):
         f = open(cache_file, 'rb')
@@ -80,24 +110,12 @@ def get_gt_boxes_from_txt(gt_path, cache_dir):
 
 
 def read_pred_file(filepath):
-
     with open(filepath, 'r') as f:
         lines = f.readlines()
         img_file = lines[0].rstrip('\n\r')
         lines = lines[2:]
 
-    # b = lines[0].rstrip('\r\n').split(' ')[:-1]
-    # c = float(b)
-    # a = map(lambda x: [[float(a[0]), float(a[1]), float(a[2]), float(a[3]), float(a[4])] for a in x.rstrip('\r\n').split(' ')], lines)
-    boxes = []
-    for line in lines:
-        line = line.rstrip('\r\n').split(' ')
-        if line[0] == '':
-            continue
-        # a = float(line[4])
-        boxes.append([float(line[0]), float(line[1]), float(line[2]), float(line[3]), float(line[4])])
-    boxes = np.array(boxes)
-    # boxes = np.array(list(map(lambda x: [float(a) for a in x.rstrip('\r\n').split(' ')], lines))).astype('float')
+    boxes = np.array(list(map(lambda x: [float(a) for a in x.rstrip('\r\n').split(' ') if a], lines))).astype('float')
     return img_file.split('/')[-1], boxes
 
 
@@ -123,6 +141,8 @@ def norm_score(pred):
     pred {key: [[x1,y1,x2,y2,s]]}
     """
 
+    # max_score = -1
+    # min_score = 2
     max_score = 0
     min_score = 1
 
@@ -140,7 +160,8 @@ def norm_score(pred):
         for _, v in k.items():
             if len(v) == 0:
                 continue
-            v[:, -1] = (v[:, -1] - min_score)/diff
+            v[:, -1] = (v[:, -1] - min_score).astype(np.float64) / diff
+    return pred
 
 
 def image_eval(pred, gt, ignore, iou_thresh):
@@ -161,12 +182,20 @@ def image_eval(pred, gt, ignore, iou_thresh):
     _gt[:, 2] = _gt[:, 2] + _gt[:, 0]
     _gt[:, 3] = _gt[:, 3] + _gt[:, 1]
 
+    # overlaps = (jaccard(torch.FloatTensor(_pred[:, :4]), torch.FloatTensor(_gt))).numpy()
+    # overlaps = compute_iou((_pred[:, :4]), (_gt))
     overlaps = bbox_overlaps(_pred[:, :4], _gt)
 
     for h in range(_pred.shape[0]):
 
         gt_overlap = overlaps[h]
+        # max_overlap, max_idx = gt_overlap.max(), gt_overlap.argmax()
+        # gt_overlap = compute_iou(_gt, _pred[h, :4])
+        # exit()
+        # exit()
+        # print ('overlap', gt_overlap)
         max_overlap, max_idx = gt_overlap.max(), gt_overlap.argmax()
+
         if max_overlap >= iou_thresh:
             if ignore[max_idx] == 0:
                 recall_list[max_idx] = -1
@@ -176,6 +205,7 @@ def image_eval(pred, gt, ignore, iou_thresh):
 
         r_keep_index = np.where(recall_list == 1)[0]
         pred_recall[h] = len(r_keep_index)
+
     return pred_recall, proposal_list
 
 
@@ -183,14 +213,14 @@ def img_pr_info(thresh_num, pred_info, proposal_list, pred_recall):
     pr_info = np.zeros((thresh_num, 2)).astype('float')
     for t in range(thresh_num):
 
-        thresh = 1 - (t+1)/thresh_num
+        thresh = 1 - (t + 1) / thresh_num
         r_index = np.where(pred_info[:, 4] >= thresh)[0]
         if len(r_index) == 0:
             pr_info[t, 0] = 0
             pr_info[t, 1] = 0
         else:
             r_index = r_index[-1]
-            p_index = np.where(proposal_list[:r_index+1] == 1)[0]
+            p_index = np.where(proposal_list[:r_index + 1] == 1)[0]
             pr_info[t, 0] = len(p_index)
             pr_info[t, 1] = pred_recall[r_index]
     return pr_info
@@ -199,15 +229,16 @@ def img_pr_info(thresh_num, pred_info, proposal_list, pred_recall):
 def dataset_pr_info(thresh_num, pr_curve, count_face):
     _pr_curve = np.zeros((thresh_num, 2))
     for i in range(thresh_num):
-        _pr_curve[i, 0] = pr_curve[i, 1] / pr_curve[i, 0]
-        _pr_curve[i, 1] = pr_curve[i, 1] / count_face
+        _pr_curve[i, 0] = round(pr_curve[i, 1] / pr_curve[i, 0], 4)
+        _pr_curve[i, 1] = round(pr_curve[i, 1] / count_face, 4)
     return _pr_curve
 
 
 def voc_ap(rec, prec):
-
     # correct AP calculation
     # first append sentinel values at the end
+    # print ('rec:', rec)
+    # print ('pre:', prec)
     mrec = np.concatenate(([0.], rec, [1.]))
     mpre = np.concatenate(([0.], prec, [0.]))
 
@@ -220,20 +251,23 @@ def voc_ap(rec, prec):
     i = np.where(mrec[1:] != mrec[:-1])[0]
 
     # and sum (\Delta recall) * prec
-    ap = np.sum((mrec[i + 1] - mrec[i]) * mpre[i + 1])
+    ap = np_round(np.sum((mrec[i + 1] - mrec[i]) * mpre[i + 1]))
     return ap
 
 
-def evaluation(pred, gt_path, iou_thresh=0.3):
+def evaluation_ap50(pred, gt_path):
     pred = get_preds(pred)
-    norm_score(pred)
+    pred = norm_score(pred)
     facebox_list, event_list, file_list, hard_gt_list, medium_gt_list, easy_gt_list = get_gt_boxes(gt_path)
     event_num = len(event_list)
     thresh_num = 1000
     settings = ['easy', 'medium', 'hard']
     setting_gts = [easy_gt_list, medium_gt_list, hard_gt_list]
     aps = []
+    setting_id = 2
     for setting_id in range(3):
+        # different setting
+        iou_th = 0.5
         # different setting
         gt_list = setting_gts[setting_id]
         count_face = 0
@@ -254,25 +288,39 @@ def evaluation(pred, gt_path, iou_thresh=0.3):
 
                 gt_boxes = gt_bbx_list[j][0].astype('float')
                 keep_index = sub_gt_list[j][0]
+                # print ('keep_index', keep_index)
                 count_face += len(keep_index)
 
                 if len(gt_boxes) == 0 or len(pred_info) == 0:
                     continue
                 ignore = np.zeros(gt_boxes.shape[0])
                 if len(keep_index) != 0:
-                    ignore[keep_index-1] = 1
-                pred_recall, proposal_list = image_eval(pred_info, gt_boxes, ignore, iou_thresh)
+                    ignore[keep_index - 1] = 1
+                pred_info = np_round(pred_info, 1)
+                pred_sort_idx = np.argsort(pred_info[:, 4])
+                pred_info = pred_info[pred_sort_idx][::-1]
+                # print ('pred_info', pred_info[:20, 4])
+                # exit()
+
+                gt_boxes = np_round(gt_boxes)
+                ignore = np_round(ignore)
+                pred_recall, proposal_list = image_eval(pred_info, gt_boxes, ignore, iou_th)
+                # print('1 stage', pred_recall, proposal_list)
 
                 _img_pr_info = img_pr_info(thresh_num, pred_info, proposal_list, pred_recall)
-
+                # print ('img_pr_info', _img_pr_info)
                 pr_curve += _img_pr_info
+        # print ('pr_curve', pr_curve, count_face)
         pr_curve = dataset_pr_info(thresh_num, pr_curve, count_face)
 
         propose = pr_curve[:, 0]
         recall = pr_curve[:, 1]
 
+        # print ('propose, recall', propose, recall)
+        # exit()
         ap = voc_ap(recall, propose)
         aps.append(ap)
+        # print ('ap:{}, iou:{}:'.format(ap, iou_th))
 
     print("==================== Results ====================")
     print("Easy   Val AP: {}".format(aps[0]))
@@ -282,22 +330,12 @@ def evaluation(pred, gt_path, iou_thresh=0.3):
 
 
 if __name__ == '__main__':
-
     parser = argparse.ArgumentParser()
-    parser.add_argument('-p', '--pred', default="./widerface_txt/")
-    parser.add_argument('-g', '--gt', default='./ground_truth/')
+    parser.add_argument('-p', '--pred', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/validation/widerface_txt_folder_resize')
+    parser.add_argument('-g', '--gt', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/widerface_evaluate/ground_truth')
+    #parser.add_argument('-i', '--iter', default='140')
+    #parser.add_argument('-d', '--det_result_txt', default=None)
 
     args = parser.parse_args()
-    evaluation(args.pred, args.gt)
-
-
-
-
-
-
-
-
-
-
-
-
+    #evaluation_ap50(args.pred, args.gt, args.iter, args.det_result_txt)
+    evaluation_ap50(args.pred, args.gt)

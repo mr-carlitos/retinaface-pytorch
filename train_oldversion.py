@@ -26,18 +26,15 @@ parser.add_argument('--gamma', default=0.1, type=float, help='Gamma update for S
 parser.add_argument('--save_folder', default='./weights/', help='Location to save checkpoint models')
 
 args = parser.parse_args()
-torch.cuda.set_device(2)
 
 if not os.path.exists(args.save_folder):
     os.mkdir(args.save_folder)
 
 cfg = cfg_re50
 
-
 rgb_mean = (104, 117, 124) # bgr order
 num_classes = 2
 img_dim = cfg['image_size']
-num_gpu = cfg['ngpu']
 batch_size = cfg['batch_size']
 max_epoch = cfg['epoch']
 gpu_train = cfg['gpu_train']
@@ -50,6 +47,8 @@ gamma = args.gamma
 training_dataset = args.training_dataset
 save_folder = args.save_folder
 
+device_ids = [2, 3]
+torch.cuda.set_device(device_ids[0])
 net = RetinaFace(cfg=cfg)
 print("Printing net...")
 print(net)
@@ -69,14 +68,15 @@ if args.resume_net is not None:
         new_state_dict[name] = v
     net.load_state_dict(new_state_dict)
 
+
+num_gpu = len(device_ids)
 if num_gpu > 1 and gpu_train:
-    #TODO: Find out how to assign specific GPU indexes here, so I assign the GPUs that are not used currently on rolf
-    device_ids = [5, 7]  # list the GPU indices you want to use
-    net = torch.nn.DataParallel(net, device_ids=device_ids).cuda(device_ids[0])
+    # Set the primary CUDA device to the first in your list
+    net = torch.nn.DataParallel(net, device_ids=device_ids).cuda()
 else:
     net = net.cuda()
 
-cudnn.benchmark = True
+#cudnn.benchmark = True
 
 iou_threshold_background = cfg['iou_threshold_background']
 iou_threshold_foreground = cfg['iou_threshold_foreground']
@@ -124,7 +124,7 @@ def train():
         load_t0 = time.time()
         if iteration in stepvalues:
             step_index += 1
-        lr = adjust_learning_rate(optimizer, gamma, epoch, step_index, iteration, epoch_size)
+        lr = adjust_learning_rate(optimizer, gamma, epoch, step_index, iteration, epoch_size, args)
 
         # load train data
         images, targets = next(batch_iterator)
@@ -151,18 +151,24 @@ def train():
     # torch.save(net.state_dict(), save_folder + 'Final_Retinaface.pth')
 
 
-def adjust_learning_rate(optimizer, gamma, epoch, step_index, iteration, epoch_size):
-    """Sets the learning rate
-    # Adapted from PyTorch Imagenet example:
-    # https://github.com/pytorch/examples/blob/master/imagenet/main.py
-    """
-    warmup_epoch = -1
-    if epoch <= warmup_epoch:
-        lr = 1e-6 + (initial_lr-1e-6) * iteration / (epoch_size * warmup_epoch)
+def adjust_learning_rate(optimizer, gamma, epoch, step_index, iteration, epoch_size, args):
+    """Sets the learning rate with warmup and decay.
+    The learning rate warms up from args.lr (e.g., 1e-3) to 10x args.lr (i.e., 1e-2) over 5 epochs."""
+    warmup_epoch = 5
+    lr_start = args.lr        # Starting learning rate (e.g., 1e-3)
+    lr_final = lr_start * 10  # Final learning rate after warmup (e.g., 1e-2)
+
+    if epoch < warmup_epoch:
+        # Linear warmup: interpolate between lr_start and lr_final over warmup_epoch epochs
+        progress = (epoch * epoch_size + iteration) / (warmup_epoch * epoch_size)
+        lr = lr_start + progress * (lr_final - lr_start)
     else:
-        lr = initial_lr * (gamma ** (step_index))
+        # After warmup, start with lr_final and apply step decay
+        lr = lr_final * (gamma ** step_index)
+
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
+
     return lr
 
 if __name__ == '__main__':

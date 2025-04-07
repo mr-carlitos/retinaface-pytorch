@@ -9,7 +9,10 @@ cimport cython
 import numpy as np
 cimport numpy as np
 
-DTYPE = np.float
+# Add this line to initialize NumPy C-API
+np.import_array()
+
+DTYPE = np.float64
 ctypedef np.float_t DTYPE_t
 
 def bbox_overlaps(

@@ -1,7 +1,9 @@
 # config.py
 
 cfg_re50 = {
-    'name': 'Resnet50-11k',
+    'name': 'RetinaFace_baseline_withFPN',
+    'backbone_name': 'Resnet50-11k',
+    'featuremaps_at_end_of_stage': True,
     #This means that for each feature map (corresponding to a particular scale), two square anchors are generated—one with a smaller size and one with a larger size.
     'min_sizes': [
         [16, int(16*2**(1/3)), int(16*2**(2/3))],   # For P2
@@ -16,7 +18,7 @@ cfg_re50 = {
     'variance': [0.1, 0.2],
     'clip': False,
     'gpu_train': True,
-    'batch_size': 9,
+    'batch_size': 8,
     #For gradient accumulation
     'accumulation_steps' : 2,
     'ngpu': 1,

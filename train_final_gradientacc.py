@@ -42,7 +42,7 @@ def get_args():
     # Checkpointing
     parser.add_argument('--resume', default='', help='Resume from checkpoint')
     parser.add_argument('--start_epoch', default=0, type=int, help='Start epoch for resuming training')
-    parser.add_argument('--save_freq', default=2, type=int, help='Save checkpoint frequency (epochs)')
+    parser.add_argument('--save_freq', default=5, type=int, help='Save checkpoint frequency (epochs)')
 
     # Other parameters
     parser.add_argument('--seed', default=42, type=int, help='Random seed for reproducibility')
@@ -348,26 +348,6 @@ def train(cfg, args):
                     f'Loc: {loc_losses.val:.4f} ({loc_losses.avg:.4f}) '
                     f'Cls: {cls_losses.val:.4f} ({cls_losses.avg:.4f})'
                 )
-                # CSV logging (every 100 iterations)
-                if (iteration % 100 == 0 or iteration == len(data_loader) - 1):
-                    import csv
-                    csv_log_file = os.path.join(args.log_dir, "training_log.csv")
-                    # Write header if the CSV file doesn't exist
-                    if not os.path.exists(csv_log_file):
-                        with open(csv_log_file, 'w', newline='') as f:
-                            csv_writer = csv.writer(f)
-                            csv_writer.writerow(
-                                ["timestamp", "epoch", "iteration", "ETA", "total_loss", "loss_loc", "loss_cls", "lr"])
-                    # Get current timestamp in human-readable format (up to seconds)
-                    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    # ETA is computed as the estimated time remaining based on the average batch time
-                    eta_formatted = str(datetime.timedelta(seconds=int(eta)))
-                    # Append the current log values to the CSV file
-                    with open(csv_log_file, 'a', newline='') as f:
-                        csv_writer = csv.writer(f)
-                        csv_writer.writerow(
-                            [timestamp, epoch, iteration, eta_formatted, losses.val, loc_losses.val, cls_losses.val,
-                             lr])
 
         # Save checkpoint
         is_best = losses.avg < best_loss
