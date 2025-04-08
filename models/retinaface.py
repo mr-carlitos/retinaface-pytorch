@@ -132,7 +132,7 @@ class RetinaFace(nn.Module):
     def forward(self,inputs):
         ##### CARLOS CODE STARTS HERE #######################
         if self.cfg['backbone_name'] == 'Resnet50-11k':
-            out_raw = self.backbone(inputs)
+            out_raw = self.backbone.orchestrate(inputs, self.cfg['featuremaps_at_end_of_stage'])
             indices = sorted(self.cfg['return_layers'].copy())
             out_filtered = list(out_raw[i] for i in indices)
 

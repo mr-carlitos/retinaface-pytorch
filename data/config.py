@@ -3,7 +3,7 @@
 cfg_re50 = {
     'name': 'RetinaFace_baseline_withFPN',
     'backbone_name': 'Resnet50-11k',
-    'featuremaps_at_end_of_stage': True,
+    'featuremaps_at_end_of_stage': False,
     #This means that for each feature map (corresponding to a particular scale), two square anchors are generated—one with a smaller size and one with a larger size.
     'min_sizes': [
         [16, int(16*2**(1/3)), int(16*2**(2/3))],   # For P2

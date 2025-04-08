@@ -136,7 +136,13 @@ class KitModel(nn.Module):
     def forward(self, x):
         #return self.extract_features_as_mxnet(x)
         return self.extract_features_after_stage(x)
-    
+
+    def orchestrate(self, x, use_end_of_stage):
+        if use_end_of_stage:
+            return self.extract_features_after_stage(x)
+        else:
+            return self.extract_features_as_mxnet(x)
+
     #Based on the forward function() I implemented this extract_features() function. It has the job of extracting the feature maps exactly as the authors did in their mxnet implementation.
     # Dimensions are: {4: (1, 128, 160, 160), 8: (1, 256, 80, 80), 16: (1, 512, 40, 40), 32: (1, 2048, 20, 20)} when returning stage2_unit1_relu2, stage3_unit1_relu2, stage4_unit1_relu2, relu1
     def extract_features_as_mxnet(self, x):

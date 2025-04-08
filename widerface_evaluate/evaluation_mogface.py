@@ -1,5 +1,6 @@
 """
 WiderFace evaluation code
+GitHub link: https://github.com/wondervictor/WiderFace-Evaluation
 author: wondervictor
 mail: tianhengcheng@gmail.com
 copyright@wondervictor
@@ -13,38 +14,12 @@ import argparse
 import numpy as np
 from scipy.io import loadmat
 from bbox import bbox_overlaps
-import torch
-
 
 def np_around(array, num_decimals=0):
     return array
-    # return np.around(array, decimals=num_decimals)
-
-
-def compute_iou(box_a, box_b):
-    x0 = np.maximum(box_a[:, 0], box_b[0])
-    y0 = np.maximum(box_a[:, 1], box_b[1])
-    x1 = np.minimum(box_a[:, 2], box_b[2])
-    y1 = np.minimum(box_a[:, 3], box_b[3])
-    # print ('x0', x0[0], x1[0], y0[0], y1[0], box_a[0], box_b[:])
-    # w = np.maximum(x1 - x0 + 1, 0)
-    w = np_around(x1 - x0 + 1)
-    # h = np.maximum(y1 - y0 + 1, 0)
-    h = np_around(y1 - y0 + 1)
-    inter = np_around(w * h)
-    area_a = (box_a[:, 2] - box_a[:, 0] + 1) * (box_a[:, 3] - box_a[:, 1] + 1)
-    area_a = np_around(area_a)
-    area_b = (box_b[2] - box_b[0] + 1) * (box_b[3] - box_b[1] + 1)
-    area_b = np_around(area_b)
-    iou = inter / (area_a + area_b - inter)
-    iou[w <= 0] = 0
-    iou[h <= 0] = 0
-    return iou
-
 
 def np_round(val, decimals=4):
     return val
-
 
 def get_gt_boxes(gt_dir):
     """ gt dir: (wider_face_val.mat, wider_easy_val.mat, wider_medium_val.mat, wider_hard_val.mat)"""
@@ -120,6 +95,18 @@ def read_pred_file(filepath):
 
 
 def get_preds(pred_dir):
+    '''
+    Walks through subdirectories (organized by “event”) in the predictions folder and reads all prediction files.
+    It builds a nested dictionary structure: top level keys are event names, and each value is a dictionary mapping image names (without extension) to their prediction arrays.
+
+    Args:
+        pred_dir (str): The path to the directory containing event subdirectories with prediction text files.
+
+    Returns:
+        boxes (dict): A nested dictionary where each key is an event name, and the corresponding value is another dictionary.
+            This inner dictionary maps image names (without file extension) to their prediction arrays (NumPy arrays).
+
+    '''
     events = os.listdir(pred_dir)
     boxes = dict()
     pbar = tqdm.tqdm(events)
@@ -137,12 +124,18 @@ def get_preds(pred_dir):
 
 
 def norm_score(pred):
-    """ norm score
-    pred {key: [[x1,y1,x2,y2,s]]}
+    """
+    Normalize detection confidence scores to [0, 1].
+
+    Args:
+        pred (dict): Nested dictionary with structure:
+                     { event_name: { image_name: np.array([[x1, y1, x2, y2, s], ...]) } },
+                     where each row corresponds to a detection box and 's' is its confidence score.
+
+    Returns:
+        dict: The input 'pred' with each confidence score rescaled so that the global minimum becomes 0 and the global maximum becomes 1.
     """
 
-    # max_score = -1
-    # min_score = 2
     max_score = 0
     min_score = 1
 
@@ -165,16 +158,34 @@ def norm_score(pred):
 
 
 def image_eval(pred, gt, ignore, iou_thresh):
-    """ single image evaluation
-    pred: Nx5
-    gt: Nx4
-    ignore:
+    """
+    Evaluate detections on a single image by matching predicted boxes to ground truth.
+
+    This function converts boxes from (x, y, w, h) to (x1, y1, x2, y2), computes the IoU
+    between each prediction and each ground truth box, and then, for each prediction,
+    determines if it matches a valid ground truth (based on the IoU threshold and the 'ignore' flag).
+    It returns a cumulative count of recalled ground truths and a flag array for valid predictions.
+
+    Args:
+        pred (np.ndarray): Array of predicted boxes with shape (N, 5) in the format [x, y, w, h, score].
+        gt (np.ndarray): Array of ground truth boxes with shape (M, 4) in the format [x, y, w, h].
+        ignore (np.ndarray): Array of length M indicating if a ground truth box should be ignored.
+        iou_thresh (float): IoU threshold to consider a prediction as matching a ground truth box.
+
+    Returns:
+        tuple:
+            - pred_recall (np.ndarray): Cumulative count of valid ground truths recalled per prediction.
+            - proposal_list (np.ndarray): Array indicating for each prediction if it is valid (or flagged as ignored).
     """
 
     _pred = pred.copy()
     _gt = gt.copy()
+
+    # Array to track cumulative count of recalled ground truths for each prediction
     pred_recall = np.zeros(_pred.shape[0])
+    # Tracks which ground truth boxes have been recalled (0 = not recalled, 1 = recalled, -1 = ignored)
     recall_list = np.zeros(_gt.shape[0])
+    # Tracks which predictions are valid (1 = valid, -1 = ignored/invalid)
     proposal_list = np.ones(_pred.shape[0])
 
     _pred[:, 2] = _pred[:, 2] + _pred[:, 0]
@@ -182,34 +193,51 @@ def image_eval(pred, gt, ignore, iou_thresh):
     _gt[:, 2] = _gt[:, 2] + _gt[:, 0]
     _gt[:, 3] = _gt[:, 3] + _gt[:, 1]
 
-    # overlaps = (jaccard(torch.FloatTensor(_pred[:, :4]), torch.FloatTensor(_gt))).numpy()
-    # overlaps = compute_iou((_pred[:, :4]), (_gt))
+    # overlaps -> Result is an N×M matrix where N is the number of predictions and M is the number of ground truth
     overlaps = bbox_overlaps(_pred[:, :4], _gt)
 
+    # For each prediction (h), find the ground truth with maximum overlap
     for h in range(_pred.shape[0]):
 
         gt_overlap = overlaps[h]
-        # max_overlap, max_idx = gt_overlap.max(), gt_overlap.argmax()
-        # gt_overlap = compute_iou(_gt, _pred[h, :4])
-        # exit()
-        # exit()
-        # print ('overlap', gt_overlap)
         max_overlap, max_idx = gt_overlap.max(), gt_overlap.argmax()
 
         if max_overlap >= iou_thresh:
             if ignore[max_idx] == 0:
                 recall_list[max_idx] = -1
                 proposal_list[h] = -1
+            # If the ground truth hasn't been claimed yet (recall_list[max_idx] == 0), mark it as recalled
             elif recall_list[max_idx] == 0:
                 recall_list[max_idx] = 1
 
         r_keep_index = np.where(recall_list == 1)[0]
         pred_recall[h] = len(r_keep_index)
 
+    # pred_recall: For each prediction, gives the count of valid ground truths recalled up to that point
+    # proposal_list: For each prediction, indicates if it's valid (1) or should be ignored (-1)
     return pred_recall, proposal_list
 
 
 def img_pr_info(thresh_num, pred_info, proposal_list, pred_recall):
+    """
+    Compute per-image precision and recall counts over a set of confidence thresholds.
+
+    For each of the 'thresh_num' thresholds (ranging from near 1 down to 0),
+    this function:
+      - Finds the last prediction with a confidence score above the threshold.
+      - Counts valid predictions (as indicated in 'proposal_list') up to that point.
+      - Retrieves the cumulative recall value from 'pred_recall'.
+
+    Args:
+        thresh_num (int): Number of confidence thresholds to evaluate.
+        pred_info (np.ndarray): Array of detections (shape: Nx5), where column 4 holds confidence scores.
+        proposal_list (np.ndarray): Array indicating valid predictions (1) or invalid ones.
+        pred_recall (np.ndarray): Array of cumulative recall counts for predictions.
+
+    Returns:
+        np.ndarray: A (thresh_num x 2) array where each row contains:
+                    [number of valid proposals, cumulative recall] for that threshold.
+    """
     pr_info = np.zeros((thresh_num, 2)).astype('float')
     for t in range(thresh_num):
 
@@ -235,10 +263,24 @@ def dataset_pr_info(thresh_num, pr_curve, count_face):
 
 
 def voc_ap(rec, prec):
+    """
+    Calculate Average Precision using the VOC (Visual Object Classes) method.
+
+    The function computes the area under the precision-recall curve by:
+    1. Adding sentinel values to the precision and recall arrays
+    2. Making the precision monotonically decreasing
+    3. Finding points where recall changes
+    4. Computing the area as a weighted sum of precision values
+
+    Args:
+        rec (np.ndarray): Array of recall values (between 0 and 1)
+        prec (np.ndarray): Array of precision values (between 0 and 1)
+
+    Returns:
+        float: The average precision value (area under the PR curve)
+    """
     # correct AP calculation
     # first append sentinel values at the end
-    # print ('rec:', rec)
-    # print ('pre:', prec)
     mrec = np.concatenate(([0.], rec, [1.]))
     mpre = np.concatenate(([0.], prec, [0.]))
 
@@ -254,7 +296,7 @@ def voc_ap(rec, prec):
     ap = np_round(np.sum((mrec[i + 1] - mrec[i]) * mpre[i + 1]))
     return ap
 
-
+#TODO: Debug this again, understand it
 def evaluation_ap50(pred, gt_path):
     pred = get_preds(pred)
     pred = norm_score(pred)
@@ -264,7 +306,6 @@ def evaluation_ap50(pred, gt_path):
     settings = ['easy', 'medium', 'hard']
     setting_gts = [easy_gt_list, medium_gt_list, hard_gt_list]
     aps = []
-    setting_id = 2
     for setting_id in range(3):
         # different setting
         iou_th = 0.5
@@ -288,7 +329,6 @@ def evaluation_ap50(pred, gt_path):
 
                 gt_boxes = gt_bbx_list[j][0].astype('float')
                 keep_index = sub_gt_list[j][0]
-                # print ('keep_index', keep_index)
                 count_face += len(keep_index)
 
                 if len(gt_boxes) == 0 or len(pred_info) == 0:
@@ -299,28 +339,20 @@ def evaluation_ap50(pred, gt_path):
                 pred_info = np_round(pred_info, 1)
                 pred_sort_idx = np.argsort(pred_info[:, 4])
                 pred_info = pred_info[pred_sort_idx][::-1]
-                # print ('pred_info', pred_info[:20, 4])
-                # exit()
 
                 gt_boxes = np_round(gt_boxes)
                 ignore = np_round(ignore)
                 pred_recall, proposal_list = image_eval(pred_info, gt_boxes, ignore, iou_th)
-                # print('1 stage', pred_recall, proposal_list)
 
                 _img_pr_info = img_pr_info(thresh_num, pred_info, proposal_list, pred_recall)
-                # print ('img_pr_info', _img_pr_info)
                 pr_curve += _img_pr_info
-        # print ('pr_curve', pr_curve, count_face)
         pr_curve = dataset_pr_info(thresh_num, pr_curve, count_face)
 
         propose = pr_curve[:, 0]
         recall = pr_curve[:, 1]
 
-        # print ('propose, recall', propose, recall)
-        # exit()
         ap = voc_ap(recall, propose)
         aps.append(ap)
-        # print ('ap:{}, iou:{}:'.format(ap, iou_th))
 
     print("==================== Results ====================")
     print("Easy   Val AP: {}".format(aps[0]))
