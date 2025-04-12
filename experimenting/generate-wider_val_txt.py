@@ -1,3 +1,4 @@
+##### CARLOS CODE FILE ########
 from glob import glob
 def first_try():
     val_imgs_dir = '/local/scratch/datasets/WiderFace/WIDER_val/images/'

@@ -22,7 +22,23 @@ def np_round(val, decimals=4):
     return val
 
 def get_gt_boxes(gt_dir):
-    """ gt dir: (wider_face_val.mat, wider_easy_val.mat, wider_medium_val.mat, wider_hard_val.mat)"""
+    """
+    Load the ground truth annotations from the WiderFace .mat files.
+
+    Parameters:
+        gt_dir (str): Directory containing the following MATLAB files:
+                      'wider_face_val.mat', 'wider_easy_val.mat',
+                      'wider_medium_val.mat', and 'wider_hard_val.mat'.
+
+    Returns:
+        tuple: A tuple containing six elements:
+            - facebox_list: Array of ground truth face bounding boxes.
+            - event_list: Array of event identifiers. This array lists the "events" (groups or categories) in the dataset. Each event groups a collection of images.
+            - file_list: Array of image file names per event.
+            - hard_gt_list: Array of indices/flags for hard faces.
+            - medium_gt_list: Array of indices/flags for medium faces.
+            - easy_gt_list: Array of indices/flags for easy faces.
+    """
 
     gt_mat = loadmat(os.path.join(gt_dir, 'wider_face_val.mat'))
     hard_mat = loadmat(os.path.join(gt_dir, 'wider_hard_val.mat'))
@@ -164,7 +180,7 @@ def image_eval(pred, gt, ignore, iou_thresh):
     This function converts boxes from (x, y, w, h) to (x1, y1, x2, y2), computes the IoU
     between each prediction and each ground truth box, and then, for each prediction,
     determines if it matches a valid ground truth (based on the IoU threshold and the 'ignore' flag).
-    It returns a cumulative count of recalled ground truths and a flag array for valid predictions.
+    It returns a cumulative count of matched ground truths and a flag array for valid predictions.
 
     Args:
         pred (np.ndarray): Array of predicted boxes with shape (N, 5) in the format [x, y, w, h, score].
@@ -174,7 +190,7 @@ def image_eval(pred, gt, ignore, iou_thresh):
 
     Returns:
         tuple:
-            - pred_recall (np.ndarray): Cumulative count of valid ground truths recalled per prediction.
+            - pred_recall (np.ndarray): Cumulative count of valid ground truths matched per prediction. -> Computes basically the True Positives (TPs)
             - proposal_list (np.ndarray): Array indicating for each prediction if it is valid (or flagged as ignored).
     """
 
@@ -213,7 +229,7 @@ def image_eval(pred, gt, ignore, iou_thresh):
         r_keep_index = np.where(recall_list == 1)[0]
         pred_recall[h] = len(r_keep_index)
 
-    # pred_recall: For each prediction, gives the count of valid ground truths recalled up to that point
+    # pred_recall: For each prediction, gives the count of valid ground truths matched up to that point -> Computes basically the True Positives (TPs)
     # proposal_list: For each prediction, indicates if it's valid (1) or should be ignored (-1)
     return pred_recall, proposal_list
 
@@ -226,7 +242,7 @@ def img_pr_info(thresh_num, pred_info, proposal_list, pred_recall):
     this function:
       - Finds the last prediction with a confidence score above the threshold.
       - Counts valid predictions (as indicated in 'proposal_list') up to that point.
-      - Retrieves the cumulative recall value from 'pred_recall'.
+      - Retrieves the cumulative matched value from 'pred_recall'.
 
     Args:
         thresh_num (int): Number of confidence thresholds to evaluate.
@@ -249,22 +265,42 @@ def img_pr_info(thresh_num, pred_info, proposal_list, pred_recall):
         else:
             r_index = r_index[-1]
             p_index = np.where(proposal_list[:r_index + 1] == 1)[0]
-            pr_info[t, 0] = len(p_index)
-            pr_info[t, 1] = pred_recall[r_index]
+            pr_info[t, 0] = len(p_index) # Number of proposals or "Predicted Positive" (TPs + FPs) (at threshold t)
+            pr_info[t, 1] = pred_recall[r_index] # Number of TPs (at threshold t)
     return pr_info
 
 
 def dataset_pr_info(thresh_num, pr_curve, count_face):
+    """
+        Compute normalized precision and recall at each confidence threshold.
+
+        For each threshold, precision is calculated as the number of recalled detections
+        divided by the number of valid proposals, and recall is calculated as the number
+        of recalled detections divided by the total number of ground truth faces.
+
+        Precision: How many of the valid detections were actually correct.
+        Recall: What fraction of all the ground truth objects have been detected.
+
+        Args:
+            thresh_num (int): Number of confidence thresholds.
+            pr_curve (np.ndarray): Array of shape (thresh_num, 2) with raw counts:
+                                   [valid proposals, cumulative recall] per threshold.
+            count_face (int): Total number of ground truth faces in the dataset.
+
+        Returns:
+            np.ndarray: Array of shape (thresh_num, 2) where each row contains:
+                        [precision, recall] for that threshold.
+        """
     _pr_curve = np.zeros((thresh_num, 2))
     for i in range(thresh_num):
-        _pr_curve[i, 0] = round(pr_curve[i, 1] / pr_curve[i, 0], 4)
-        _pr_curve[i, 1] = round(pr_curve[i, 1] / count_face, 4)
+        _pr_curve[i, 0] = round(pr_curve[i, 1] / pr_curve[i, 0], 4) # TPs / (TPs + FPs) = TPs / PREDICTED_POSTIVES
+        _pr_curve[i, 1] = round(pr_curve[i, 1] / count_face, 4) # TPs / (TPs + FNs) = TPs / POSITIVES
     return _pr_curve
 
 
 def voc_ap(rec, prec):
     """
-    Calculate Average Precision using the VOC (Visual Object Classes) method.
+    Calculate Average Precision
 
     The function computes the area under the precision-recall curve by:
     1. Adding sentinel values to the precision and recall arrays
@@ -296,7 +332,7 @@ def voc_ap(rec, prec):
     ap = np_round(np.sum((mrec[i + 1] - mrec[i]) * mpre[i + 1]))
     return ap
 
-#TODO: Debug this again, understand it
+
 def evaluation_ap50(pred, gt_path):
     pred = get_preds(pred)
     pred = norm_score(pred)
@@ -315,6 +351,8 @@ def evaluation_ap50(pred, gt_path):
         pr_curve = np.zeros((thresh_num, 2)).astype('float')
         # [hard, medium, easy]
         pbar = tqdm.tqdm(range(event_num))
+
+        # for each setting (e.g., Parade)
         for i in pbar:
             pbar.set_description('Processing {}'.format(settings[setting_id]))
             event_name = str(event_list[i][0][0])
@@ -324,6 +362,7 @@ def evaluation_ap50(pred, gt_path):
             # img_pr_info_list = np.zeros((len(img_list), thresh_num, 2))
             gt_bbx_list = facebox_list[i][0]
 
+            #for each image in the current setting
             for j in range(len(img_list)):
                 pred_info = pred_list[str(img_list[j][0][0])]
 
