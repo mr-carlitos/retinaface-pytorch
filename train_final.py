@@ -16,7 +16,6 @@ from dotenv import load_dotenv
 from pathlib import Path
 import numpy as np
 import warnings
-from torch.utils.tensorboard import SummaryWriter
 
 load_dotenv()
 
@@ -42,7 +41,7 @@ def get_args():
     # Checkpointing
     parser.add_argument('--resume', default='', help='Resume from checkpoint')
     parser.add_argument('--start_epoch', default=0, type=int, help='Start epoch for resuming training')
-    parser.add_argument('--save_freq', default=2, type=int, help='Save checkpoint frequency (epochs)')
+    parser.add_argument('--save_freq', default=5, type=int, help='Save checkpoint frequency (epochs)')
 
     # Other parameters
     parser.add_argument('--seed', default=42, type=int, help='Random seed for reproducibility')
@@ -63,8 +62,10 @@ def setup_distributed(args):
         args.world_size = dist.get_world_size()
         args.rank = dist.get_rank()
         args.local_rank = int(os.environ.get('LOCAL_RANK', args.local_rank))
+        print(args.local_rank)
         torch.cuda.set_device(args.local_rank)
         args.device = torch.device(f'cuda:{args.local_rank}')
+        print(args.device)
         args.distributed = True
         print(f"Distributed training initialized: rank {args.rank}/{args.world_size} on device {args.device}")
     else:
@@ -79,6 +80,10 @@ def setup_distributed(args):
     if torch.cuda.is_available():
         torch.cuda.manual_seed(args.seed)
         torch.cuda.manual_seed_all(args.seed)
+
+    # Add cudnn benchmark
+    import torch.backends.cudnn as cudnn
+    cudnn.benchmark = True
 
     # Create directories
     if args.rank == 0 or not args.distributed:
@@ -150,12 +155,20 @@ def get_data_loader(dataset, batch_size, args):
         batch_size=batch_size,
         shuffle=shuffle,
         num_workers=args.num_workers,
-        pin_memory=True,
+        #pin_memory=True,
         sampler=sampler,
         collate_fn=detection_collate
     )
 
     return data_loader, sampler
+
+def log_gpu_memory(device):
+    allocated = torch.cuda.memory_allocated(device) / (1024**2)  # in MB
+    reserved = torch.cuda.memory_reserved(device) / (1024**2)    # in MB
+    summary = torch.cuda.memory_summary(device=device)
+    print(f"Allocated: {allocated:.2f} MB, Reserved: {reserved:.2f} MB")
+    print(summary)
+
 
 def save_checkpoint(net, optimizer, epoch, loss, args, is_best=False):
     """Save model checkpoint"""
@@ -213,6 +226,8 @@ def train(cfg, args):
     """Main training function"""
     # Initialize model
     net = get_model(cfg, args)
+    # Set model to training mode
+    net.train()
 
     # Initialize optimizer
     optimizer = optim.SGD(
@@ -242,7 +257,7 @@ def train(cfg, args):
     # Initialize prior boxes
     priorbox = PriorBox(cfg, image_size=(cfg['image_size'], cfg['image_size']))
     with torch.no_grad():
-        priors = priorbox.forward()
+        priors = priorbox.vectorized_forward()
         priors = priors.to(args.device)
 
     # Initialize dataset
@@ -265,7 +280,6 @@ def train(cfg, args):
 
     # Start from saved epoch if resuming
     start_epoch = args.start_epoch
-    start_iter = start_epoch * epoch_size
 
     # Create data loader
     data_loader, sampler = get_data_loader(dataset, batch_size, args)
@@ -285,12 +299,13 @@ def train(cfg, args):
         loc_losses = AverageMeter('Loc', ':.4e')
         cls_losses = AverageMeter('Cls', ':.4e')
 
-        # Set model to training mode
-        net.train()
-
         end = time.time()
+        optimizer.zero_grad()
 
         for iteration, (images, targets) in enumerate(data_loader):
+
+            if iteration == 0 and (args.rank == 0 or not args.distributed):
+                print(f"Image dimensions: {images.shape}")  # Should show batch_size x channels x height x width
             # Measure data loading time
             data_time.update(time.time() - end)
 
@@ -313,17 +328,19 @@ def train(cfg, args):
 
             # Calculate loss
             loss_l, loss_c = criterion(out, priors, targets)
-            loss = loss_l + loss_c
+            loss = (loss_l + loss_c)
 
+            actual_loss = loss.item()
             # Update metrics
-            losses.update(loss.item(), images.size(0))
+            losses.update(actual_loss, images.size(0))
             loc_losses.update(loss_l.item(), images.size(0))
             cls_losses.update(loss_c.item(), images.size(0))
 
-            # Backward pass and optimize
-            optimizer.zero_grad()
+            # Backward pass and optimizer
             loss.backward()
+
             optimizer.step()
+            optimizer.zero_grad()
 
             # Measure elapsed time
             batch_time.update(time.time() - end)
@@ -332,7 +349,6 @@ def train(cfg, args):
             # Log progress
             if (iteration % 10 == 0 or iteration == len(data_loader) - 1) and (args.rank == 0 or not args.distributed):
                 eta = batch_time.avg * (len(data_loader) - iteration + (max_epoch - epoch - 1) * len(data_loader))
-
                 print(
                     f'Epoch: [{epoch}/{max_epoch}][{iteration}/{len(data_loader)}] '
                     f'ETA: {str(datetime.timedelta(seconds=int(eta)))} '
@@ -343,26 +359,13 @@ def train(cfg, args):
                     f'Loc: {loc_losses.val:.4f} ({loc_losses.avg:.4f}) '
                     f'Cls: {cls_losses.val:.4f} ({cls_losses.avg:.4f})'
                 )
-                # CSV logging (every 100 iterations)
-                if (iteration % 100 == 0 or iteration == len(data_loader) - 1):
-                    import csv
-                    csv_log_file = os.path.join(args.log_dir, "training_log.csv")
-                    # Write header if the CSV file doesn't exist
-                    if not os.path.exists(csv_log_file):
-                        with open(csv_log_file, 'w', newline='') as f:
-                            csv_writer = csv.writer(f)
-                            csv_writer.writerow(
-                                ["timestamp", "epoch", "iteration", "ETA", "total_loss", "loss_loc", "loss_cls", "lr"])
-                    # Get current timestamp in human-readable format (up to seconds)
-                    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    # ETA is computed as the estimated time remaining based on the average batch time
-                    eta_formatted = str(datetime.timedelta(seconds=int(eta)))
-                    # Append the current log values to the CSV file
-                    with open(csv_log_file, 'a', newline='') as f:
-                        csv_writer = csv.writer(f)
-                        csv_writer.writerow(
-                            [timestamp, epoch, iteration, eta_formatted, losses.val, loc_losses.val, cls_losses.val,
-                             lr])
+
+            if (iteration % 200 == 0 or iteration == len(data_loader) - 1):
+                log_gpu_memory(args.device)
+
+            del images, targets, out, loss, loss_l, loss_c
+
+        torch.cuda.empty_cache()
 
         # Save checkpoint
         is_best = losses.avg < best_loss

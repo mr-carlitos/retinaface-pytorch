@@ -322,13 +322,17 @@ def voc_ap(rec, prec):
 
     # compute the precision envelope
     for i in range(mpre.size - 1, 0, -1):
+        # creates a step-like function where precision only decreases as recall increases
         mpre[i - 1] = np.maximum(mpre[i - 1], mpre[i])
 
     # to calculate area under PR curve, look for points
     # where X axis (recall) changes value
+    # These are the transition points where we need to calculate the area
     i = np.where(mrec[1:] != mrec[:-1])[0]
 
     # and sum (\Delta recall) * prec
+    # Each rectangle's width is the change in recall (mrec[i + 1] - mrec[i])
+    # Each rectangle's height is the precision at that recall level (mpre[i + 1])
     ap = np_round(np.sum((mrec[i + 1] - mrec[i]) * mpre[i + 1]))
     return ap
 
@@ -402,7 +406,7 @@ def evaluation_ap50(pred, gt_path):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-p', '--pred', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/validation/widerface_txt_folder_resize')
+    parser.add_argument('-p', '--pred', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/validation/widerface_like_mxnet')
     parser.add_argument('-g', '--gt', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/widerface_evaluate/ground_truth')
     #parser.add_argument('-i', '--iter', default='140')
     #parser.add_argument('-d', '--det_result_txt', default=None)

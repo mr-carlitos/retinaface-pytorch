@@ -129,51 +129,51 @@ class RetinaFace(nn.Module):
             bboxhead.append(BboxHead(inchannels, anchor_num))
         return bboxhead
 
-    def forward(self,inputs):
+    def forward(self,x):
         ##### CARLOS CODE STARTS HERE #######################
         if self.cfg['backbone_name'] == 'Resnet50-11k':
-            out_raw = self.backbone.orchestrate(inputs, self.cfg['featuremaps_at_end_of_stage'])
+            out_raw = self.backbone.orchestrate(x, self.cfg['featuremaps_at_end_of_stage'])
             indices = sorted(self.cfg['return_layers'].copy())
             out_filtered = list(out_raw[i] for i in indices)
 
-            out = OrderedDict()
+            x = OrderedDict()
             for idx, key in enumerate(indices):
-                out[key] = out_filtered[idx]
+                x[key] = out_filtered[idx]
 
         else:
-            out = self.backbone(inputs)
+            x = self.backbone(x)
 
         if self.cfg['apply_FPN']:
             # FPN
-            intermediate = self.fpn(out)
+            intermediate = self.fpn(x)
         else:
             intermediate = list()
             j = 0
             for conv1x1 in self.conv1x1list:
-                intermediate.append(conv1x1(out[j]))
+                intermediate.append(conv1x1(x[j]))
                 j += 1
 
         if self.cfg['introduce_P6'] and 3 in self.cfg['return_layers']:
             #Remember that out is a dict, not a list. So we need to do out[3]
-            feature_P6 = self.P6(out[3])
+            feature_P6 = self.P6(x[3])
             intermediate.append(feature_P6)
 
         # Context Module
         i = 0
-        features = list()
+        x = list()
         for context_module in self.context_modules_list:
-            features.append(context_module(intermediate[i]))
+            x.append(context_module(intermediate[i]))
             i += 1
 
         ##### CARLOS CODE ENDS HERE #######################
-        bbox_regressions = torch.cat([self.BboxHead[i](feature) for i, feature in enumerate(features)], dim=1)
-        classifications = torch.cat([self.ClassHead[i](feature) for i, feature in enumerate(features)],dim=1)
+        bbox_regressions = torch.cat([self.BboxHead[i](feature) for i, feature in enumerate(x)], dim=1)
+        classifications = torch.cat([self.ClassHead[i](feature) for i, feature in enumerate(x)],dim=1)
 
         if self.phase == 'train':
-            output = (bbox_regressions, classifications)
+            x = (bbox_regressions, classifications)
         else:
-            output = (bbox_regressions, F.softmax(classifications, dim=-1))
-        return output
+            x = (bbox_regressions, F.softmax(classifications, dim=-1))
+        return x
 
     ##### CARLOS CODE STARTS HERE #######################
     def create_P6(self):

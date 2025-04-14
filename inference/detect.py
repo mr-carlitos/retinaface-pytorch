@@ -108,7 +108,7 @@ if __name__ == '__main__':
     print('net forward time: {:.4f}'.format(time.time() - tic))
     #cfg ist ein JSON / dictionary. siehe data / config.py
     priorbox = PriorBox(cfg, image_size=(im_height, im_width))
-    priors = priorbox.forward()
+    priors = priorbox.vectorized_forward()
     priors = priors.to(device)
     prior_data = priors.data
     boxes = decode(loc.data.squeeze(0), prior_data, cfg['variance'])

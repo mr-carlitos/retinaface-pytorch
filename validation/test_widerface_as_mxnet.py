@@ -2,8 +2,9 @@
 ## Based on mxnet implementation of RetinaFace
 # retinaface.py: https://github.com/deepinsight/insightface/blob/master/detection/retinaface/retinaface.py#L573
 # test_widerface.py: https://github.com/deepinsight/insightface/blob/master/detection/retinaface/test_widerface.py
-
 from __future__ import print_function
+import sys, os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import os
 import argparse
 import torch
@@ -14,7 +15,7 @@ from layers.functions.prior_box import PriorBox
 from utils.box_voting import bbox_vote
 import cv2
 from models.retinaface import RetinaFace
-from utils.box_utils import decode
+from utils.box_utils import decode, clip_boxes
 from utils.timer import Timer
 
 
@@ -30,7 +31,7 @@ parser.add_argument('--confidence_threshold', default=0.02, type=float, help='co
 parser.add_argument('--nms_threshold', default=0.4, type=float, help='nms_threshold')
 parser.add_argument('--keep_top_k', default=750, type=int, help='keep_top_k')
 parser.add_argument('-s', '--save_image', action="store_true", default=False, help='show detection results')
-parser.add_argument('--vis_thres', default=0.5, type=float, help='visualization_threshold')
+parser.add_argument('--vis_thres', default=0.35, type=float, help='visualization_threshold')
 parser.add_argument('--flipping', default=True, type=bool, help='if we do flipping during evaluation pipeline')
 args = parser.parse_args()
 
@@ -81,14 +82,16 @@ if __name__ == '__main__':
     net.eval()
     print('Finished loading model!')
     print(net)
-    #cudnn.benchmark = True
+    cudnn.benchmark = False
 
     torch.cuda.set_device(3)
     device = torch.device("cpu" if args.cpu else "cuda")
     net = net.to(device)
 
+
     # Multi-scale and flip settings.
     # If not evaluating at original size, use multi-scale.
+    # These numbers represent target values for the shorter side of the image
     TEST_SCALES = [500, 800, 1100, 1400, 1700] if not args.origin_size else None
     do_flip = args.flipping  # Enable horizontal flip.
     max_size = 2150  # Maximum allowed size for the longer side.
@@ -112,6 +115,7 @@ if __name__ == '__main__':
         if img_raw is None:
             print("Failed to load image:", image_path)
             continue
+        original_width = img_raw.shape[1]
 
         im_shape = img_raw.shape
         im_size_min = np.min(im_shape[0:2])
@@ -154,7 +158,7 @@ if __name__ == '__main__':
 
                 im_height, im_width, _ = img_resized.shape
                 # Scale tensor for converting network outputs back.
-                scale_tensor = torch.Tensor([im_width, im_height, im_width, im_height])
+                scale_tensor = torch.Tensor([im_width, im_height, im_width, im_height]).to(device)
 
                 # Preprocessing: subtract mean (BGR) and transpose.
                 img_input = np.float32(img_resized)
@@ -168,13 +172,17 @@ if __name__ == '__main__':
                     loc, conf = net(img_input)
                 # Generate prior boxes and decode detections.
                 priorbox = PriorBox(cfg, image_size=(im_height, im_width))
-                priors = priorbox.forward()
-                priors = priors.to(device)
+                with torch.no_grad():
+                    priors = priorbox.vectorized_forward().float()
+                    priors = priors.to(device)
                 prior_data = priors.data
                 boxes = decode(loc.data.squeeze(0), prior_data, cfg['variance'])
                 # Convert boxes to original image coordinates.
                 boxes = boxes * scale_tensor / resize
                 boxes = boxes.cpu().numpy()
+
+                boxes = clip_boxes(boxes, img_raw.shape[:2])
+
                 scores = conf.squeeze(0).data.cpu().numpy()[:, 1]
 
                 # Filter low confidence detections.
@@ -186,15 +194,20 @@ if __name__ == '__main__':
 
                 # Unflip boxes if the image was flipped.
                 if flip:
-                    # For flipped images, adjust x-coordinates.
                     x1 = boxes[:, 0].copy()
                     x2 = boxes[:, 2].copy()
-                    boxes[:, 0] = im_width - x2 - 1
-                    boxes[:, 2] = im_width - x1 - 1
+                    boxes[:, 0] = original_width - x2 - 1
+                    boxes[:, 2] = original_width - x1 - 1
 
                 # Stack boxes and scores.
                 dets = np.hstack((boxes, scores_selected[:, np.newaxis])).astype(np.float32, copy=False)
                 aggregated_dets.append(dets)
+
+                del img_input, loc, conf, scale_tensor, priorbox, priors, prior_data
+                del boxes, scores
+
+                # Optionally clear the CUDA cache to force immediate release:
+                torch.cuda.empty_cache()
 
         if len(aggregated_dets) == 0:
             print("No detections for image {}".format(img_name))
@@ -228,9 +241,8 @@ if __name__ == '__main__':
 
         print("im_detect: {}/{} total_time: {:.4f}s".format(i + 1, num_images, _t['all'].average_time))
 
-        # save image
         if args.save_image:
-            for b in dets:
+            for b in final_dets:
                 if b[4] < args.vis_thres:
                     continue
                 text = "{:.4f}".format(b[4])
@@ -245,3 +257,5 @@ if __name__ == '__main__':
                 os.makedirs("./results/")
             name = "./results/" + str(i) + ".jpg"
             cv2.imwrite(name, img_raw)
+
+        torch.cuda.empty_cache()

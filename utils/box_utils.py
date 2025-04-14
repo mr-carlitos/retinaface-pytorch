@@ -89,9 +89,10 @@ def match_ohem(threshold_background, threshold_foreground, truths, priors, varia
     # jaccard index
     # we basically compare EACH of the truths with EACH of the 102'300 priors. First, we convert the priors from cx, cy, s_kx, s_ky to (xmin, ymin, xmax, ymax)
     # overlaps has Shape: [box_a.size(0), box_b.size(0)] which means [AmountOfTruthBoxes, 102'300]
-    overlaps = jaccard(
+    overlaps = batch_jaccard(
         truths,
-        point_form(priors)
+        point_form(priors),
+        batch_size=1000  # Adjust this value based on your GPU memory
     )
 
     # 2. For Each Ground Truth, Find Its Best-Matching Prior
@@ -153,6 +154,26 @@ def match_ohem(threshold_background, threshold_foreground, truths, priors, varia
 
     conf_t[idx] = conf  # [num_priors] top class label for each prior
 
+def batch_jaccard(box_a, box_b, batch_size=1000):
+    """Compute the jaccard overlap in memory-efficient batches.
+    Args:
+        box_a: (tensor) Ground truth bounding boxes, Shape: [num_objects,4]
+        box_b: (tensor) Prior boxes from priorbox layers, Shape: [num_priors,4]
+        batch_size: (int) Size of each batch of prior boxes to process
+    Return:
+        jaccard overlap: (tensor) Shape: [box_a.size(0), box_b.size(0)]
+    """
+    A = box_a.size(0)
+    B = box_b.size(0)
+    ious = torch.zeros(A, B, device=box_a.device)
+
+    for i in range(0, B, batch_size):
+        end = min(i + batch_size, B)
+        batch_ious = jaccard(box_a, box_b[i:end])
+        ious[:, i:end] = batch_ious
+
+    return ious
+
 def match_focal_loss(threshold_background, truths, priors, variances, labels, loc_t, conf_t, idx):
     """Match each prior box with the ground truth box of the highest jaccard
     overlap, encode the bounding boxes, then return the matched indices
@@ -175,9 +196,10 @@ def match_focal_loss(threshold_background, truths, priors, variances, labels, lo
     # jaccard index
     # we basically compare EACH of the truths with EACH of the 102'300 priors. First, we convert the priors from cx, cy, s_kx, s_ky to (xmin, ymin, xmax, ymax)
     # overlaps has Shape: [box_a.size(0), box_b.size(0)] which means [AmountOfTruthBoxes, 102'300]
-    overlaps = jaccard(
+    overlaps = batch_jaccard(
         truths,
-        point_form(priors)
+        point_form(priors),
+        batch_size=1000  # Adjust this value based on your GPU memory
     )
 
     # 2. For Each Ground Truth, Find Its Best-Matching Prior
@@ -316,3 +338,26 @@ def log_sum_exp(x):
     """
     x_max = x.data.max()
     return torch.log(torch.sum(torch.exp(x-x_max), 1, keepdim=True)) + x_max
+
+## CARLOS IMPLEMENTATION. INSPIRED BY clip_boxes() in https://github.com/deepinsight/insightface/blob/master/detection/retinaface/rcnn/processing/bbox_transform.py
+def clip_boxes(boxes, im_shape):
+    """
+    Clip boxes to image boundaries.
+
+    Parameters:
+      boxes (np.ndarray): Array of shape [N, 4] (or [N, 4 * num_classes])
+                          containing bounding box coordinates.
+      im_shape (tuple): Tuple (height, width) of the original image.
+
+    Returns:
+      np.ndarray: The clipped boxes.
+    """
+    # x1: elements 0, 4, 8, ... should lie between 0 and width - 1
+    boxes[:, 0::4] = np.maximum(np.minimum(boxes[:, 0::4], im_shape[1] - 1), 0)
+    # y1: elements 1, 5, 9, ... should lie between 0 and height - 1
+    boxes[:, 1::4] = np.maximum(np.minimum(boxes[:, 1::4], im_shape[0] - 1), 0)
+    # x2: elements 2, 6, 10, ... should lie between 0 and width - 1
+    boxes[:, 2::4] = np.maximum(np.minimum(boxes[:, 2::4], im_shape[1] - 1), 0)
+    # y2: elements 3, 7, 11, ... should lie between 0 and height - 1
+    boxes[:, 3::4] = np.maximum(np.minimum(boxes[:, 3::4], im_shape[0] - 1), 0)
+    return boxes

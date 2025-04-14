@@ -1,7 +1,7 @@
 # config.py
 
 cfg_re50 = {
-    'name': 'RetinaFace_baseline_withFPN',
+    'name': 'RetinaFace_baseline_retrained_withFPN_14_04_2025',
     'backbone_name': 'Resnet50-11k',
     'featuremaps_at_end_of_stage': False,
     #This means that for each feature map (corresponding to a particular scale), two square anchors are generated—one with a smaller size and one with a larger size.
@@ -18,9 +18,7 @@ cfg_re50 = {
     'variance': [0.1, 0.2],
     'clip': False,
     'gpu_train': True,
-    'batch_size': 8,
-    #For gradient accumulation
-    'accumulation_steps' : 2,
+    'batch_size': 32,
     'ngpu': 1,
     'apply_FPN': True,
     'epoch': 80,
@@ -35,8 +33,8 @@ cfg_re50 = {
     'in_channel': 256,
     'out_channel': 256,
     'anchor_num': 3,
-    'iou_threshold_background' : 0.3,
-    'iou_threshold_foreground': 0.5,
+    'iou_threshold_background' : 0.35,
+    #'iou_threshold_foreground': 0.5,
     'neg_pos_ratio': 3,
     'focal_gamma' : 2.0,
     'focal_alpha': 0.25

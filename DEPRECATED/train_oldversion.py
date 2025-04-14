@@ -89,7 +89,7 @@ criterion = MultiTaskLossWithFocalLoss(num_classes, iou_threshold_background, va
 
 priorbox = PriorBox(cfg, image_size=(img_dim, img_dim))
 with torch.no_grad():
-    priors = priorbox.forward()
+    priors = priorbox.vectorized_forward()
     priors = priors.cuda()
 
 def train():

@@ -16,3 +16,4 @@ save-checkpoints
 *.jpg
 *.png
 widerface_evaluate/build/
+*.log

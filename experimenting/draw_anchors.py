@@ -46,7 +46,7 @@ def draw_anchors_on_image(image_path, output_path):
 
     # Create PriorBox and generate anchors (in normalized coordinates)
     priorbox = PriorBox(cfg_re50, image_size=(target_size, target_size))
-    anchors = priorbox.forward()  # shape: [num_anchors, 4]
+    anchors = priorbox.vectorized_forward()  # shape: [num_anchors, 4]
 
     # Convert anchors to corner coordinates (still normalized)
     anchors_corners = point_form(anchors)
