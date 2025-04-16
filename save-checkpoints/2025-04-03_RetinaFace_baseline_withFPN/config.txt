@@ -66,7 +66,7 @@ cfg_re50 = {
     'out_channel': 256,
     'anchor_num': 3,
     'iou_threshold_background' : 0.3,
-    'iou_threshold_foreground': 0.5,
+    #'iou_threshold_foreground': 0.5,
     'neg_pos_ratio': 3,
     'focal_gamma' : 2.0,
     'focal_alpha': 0.25

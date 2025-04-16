@@ -23,14 +23,13 @@ def get_args():
     parser = argparse.ArgumentParser(description='Retinaface Training')
     parser.add_argument('--training_dataset', default='./data/widerface/train/label.txt',
                         help='Training dataset directory')
-    parser.add_argument('--network', default='resnet50', help='Backbone network mobile0.25 or resnet50')
+    parser.add_argument('--network', default='resnet50', help='Backbone resnet50')
     parser.add_argument('--num_workers', default=4, type=int, help='Number of workers used in dataloading')
     parser.add_argument('--lr', '--learning-rate', default=1e-3, type=float, help='initial learning rate')
     parser.add_argument('--momentum', default=0.9, type=float, help='momentum')
     parser.add_argument('--weight_decay', default=5e-4, type=float, help='Weight decay for SGD')
     parser.add_argument('--gamma', default=0.1, type=float, help='Gamma update for SGD')
-    parser.add_argument('--save_folder', default='./save-checkpoints/', help='Location to save checkpoint models')
-    parser.add_argument('--log_dir', default='./logs/', help='Location to save logs')
+    parser.add_argument('--save_folder', default='./save-checkpoints/2025-04-16_RetinaFace_baseline_noFPN/', help='Location to save checkpoint models')
 
     # Distributed training parameters
     parser.add_argument('--local_rank', type=int, default=0, help='Local rank for distributed training')
@@ -88,8 +87,6 @@ def setup_distributed(args):
     # Create directories
     if args.rank == 0 or not args.distributed:
         Path(args.save_folder).mkdir(parents=True, exist_ok=True)
-        Path(args.log_dir).mkdir(parents=True, exist_ok=True)
-
     return args
 
 
@@ -189,11 +186,6 @@ def save_checkpoint(net, optimizer, epoch, loss, args, is_best=False):
 
     torch.save(checkpoint, save_path)
     print(f"Checkpoint saved to {save_path}")
-
-    # Save as latest.pth
-    latest_path = os.path.join(args.save_folder, f"{cfg['name']}_latest.pth")
-    print(f"New latest.pth")
-    torch.save(checkpoint, latest_path)
 
     # Save best model if applicable
     if is_best:
@@ -360,8 +352,8 @@ def train(cfg, args):
                     f'Cls: {cls_losses.val:.4f} ({cls_losses.avg:.4f})'
                 )
 
-            if (iteration % 200 == 0 or iteration == len(data_loader) - 1):
-                log_gpu_memory(args.device)
+            #if (iteration % 200 == 0 or iteration == len(data_loader) - 1):
+            #    log_gpu_memory(args.device)
 
             del images, targets, out, loss, loss_l, loss_c
 
@@ -374,6 +366,7 @@ def train(cfg, args):
 
         if (epoch % args.save_freq == 0 or epoch == max_epoch - 1 or is_best) and (
                 args.rank == 0 or not args.distributed):
+            log_gpu_memory(args.device)
             save_checkpoint(net, optimizer, epoch, losses.avg, args, is_best=is_best)
 
     # Save final model

@@ -1,7 +1,7 @@
 # config.py
 
 cfg_re50 = {
-    'name': 'RetinaFace_baseline_retrained_withFPN_14_04_2025',
+    'name': 'RetinaFace_baseline_noFPN_16_04_2025',
     'backbone_name': 'Resnet50-11k',
     'featuremaps_at_end_of_stage': False,
     #This means that for each feature map (corresponding to a particular scale), two square anchors are generated—one with a smaller size and one with a larger size.
@@ -16,16 +16,13 @@ cfg_re50 = {
     'steps': [4, 8, 16, 32, 64],
     # The variance list of parameters is in fact an abuse of terms. Instead it indicates and contains precomputed standard deviations of the landmark and bounding box targets. What the code is doing is some sort of ad-hoc normalization of the targets.
     'variance': [0.1, 0.2],
-    'clip': False,
     'gpu_train': True,
     'batch_size': 32,
-    'ngpu': 1,
-    'apply_FPN': True,
+    'apply_FPN': False,
     'epoch': 80,
     'decay1': 55,
     'decay2': 68,
     'image_size': 640,
-    'pretrain': True,
     #For P6 to work, the 'return_layers' attribute must contain '3' in the list.
     'introduce_P6': True,
     #0 == C2, 1== C3, 2 == C4, 3 == C5
@@ -34,8 +31,8 @@ cfg_re50 = {
     'out_channel': 256,
     'anchor_num': 3,
     'iou_threshold_background' : 0.35,
-    #'iou_threshold_foreground': 0.5,
-    'neg_pos_ratio': 3,
+    #'iou_threshold_foreground': 0.5, -> we would use this for OHEM. But since we have implemented Focal Loss, we won't use OHEM & this attribute
+    # 'neg_pos_ratio': 3, -> we would use this for OHEM. But since we have implemented Focal Loss, we won't use OHEM & this attribute
     'focal_gamma' : 2.0,
     'focal_alpha': 0.25
 }

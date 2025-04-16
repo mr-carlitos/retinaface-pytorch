@@ -20,11 +20,11 @@ from utils.timer import Timer
 
 
 parser = argparse.ArgumentParser(description='Retinaface')
-parser.add_argument('-m', '--trained_model', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/weights/RetinaFace_baseline_withFPN.pth',
+parser.add_argument('-m', '--trained_model', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-04-14_RetinaFace_baseline_withFPN/RetinaFace_baseline_retrained_withFPN_14_04_2025_final.pth',
                     type=str, help='Trained state_dict file path to open')
 parser.add_argument('--origin_size', default=False, type=bool, help='Whether use origin image size to evaluate')
-parser.add_argument('--save_folder', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/validation/widerface_like_mxnet/', type=str, help='Dir to save txt results')
-parser.add_argument('--cpu', action="store_true", default=True, help='Use cpu inference')
+parser.add_argument('--save_folder', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/validation/widerface_like_mxnet_2025-04-14/', type=str, help='Dir to save txt results')
+parser.add_argument('--cpu', action="store_true", default=False, help='Use cpu inference')
 parser.add_argument('--images_folder', default='/local/scratch/datasets/WiderFace/WIDER_val/images/', type=str, help='image dataset path')
 parser.add_argument('--input_val_txt', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/data/widerface/val/wider_val.txt', type=str, help='val txt path')
 parser.add_argument('--confidence_threshold', default=0.02, type=float, help='confidence_threshold')
@@ -84,7 +84,7 @@ if __name__ == '__main__':
     print(net)
     cudnn.benchmark = False
 
-    torch.cuda.set_device(3)
+    torch.cuda.set_device(0)
     device = torch.device("cpu" if args.cpu else "cuda")
     net = net.to(device)
 

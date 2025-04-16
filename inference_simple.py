@@ -1,4 +1,11 @@
+##### CARLOS CODE FILE ########
+#### A simpler inference script, heavily based on https://github.com/biubug6/Pytorch_Retinaface/blob/master/detect.py
+## Actually quite the same as inference_sophisticated.py, but the settings for flipping, multi-scaling and box voting are per default set to False. And,
+# I added the option to choose between NMS and Box Voting (inference_sophisticated.py only has the Box Voting option, as the RetinaFace authors say in their paper)
+
 from __future__ import print_function
+import sys, os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import os
 import argparse
 import torch
@@ -6,15 +13,15 @@ import torch.backends.cudnn as cudnn
 import numpy as np
 from data import cfg_re50
 from layers.functions.prior_box import PriorBox
-from utils.nms.py_cpu_nms import py_cpu_nms
+from utils.box_voting import bbox_vote
 import cv2
 from models.retinaface import RetinaFace
-from utils.box_utils import decode
-import time
+from utils.box_utils import decode, clip_boxes
+from utils.nms.py_cpu_nms import py_cpu_nms
 
 parser = argparse.ArgumentParser(description='Retinaface')
 
-parser.add_argument('-m', '--trained_model', default='../weights/RetinaFace_baseline_withFPN.pth',
+parser.add_argument('-m', '--trained_model', default='./weights/RetinaFace_baseline_retrained_withFPN_14_04_2025_final.pth',
                     type=str, help='Trained state_dict file path to open')
 parser.add_argument('--cpu', action="store_true", default=False, help='Use cpu inference')
 parser.add_argument('--confidence_threshold', default=0.02, type=float, help='confidence_threshold')
@@ -23,6 +30,9 @@ parser.add_argument('--nms_threshold', default=0.4, type=float, help='nms_thresh
 parser.add_argument('--keep_top_k', default=750, type=int, help='keep_top_k')
 parser.add_argument('-s', '--save_image', action="store_true", default=True, help='show detection results')
 parser.add_argument('--vis_thres', default=0.4, type=float, help='visualization_threshold')
+parser.add_argument('--origin_size', default=True, type=bool, help='Whether use origin image size to evaluate')
+parser.add_argument('--flipping', default=False, type=bool, help='if we do flipping during evaluation pipeline')
+parser.add_argument('--nms', default=True, type=bool, help='Use NMS or Box Voting')
 args = parser.parse_args()
 
 
@@ -38,11 +48,13 @@ def check_keys(model, pretrained_state_dict):
     assert len(used_pretrained_keys) > 0, 'load NONE from pretrained checkpoint'
     return True
 
+
 def remove_prefix(state_dict, prefix):
     ''' Old style model is stored with all names of parameters sharing common prefix 'module.' '''
     print('remove prefix \'{}\''.format(prefix))
     f = lambda x: x.split(prefix, 1)[-1] if x.startswith(prefix) else x
     return {f(key): value for key, value in state_dict.items()}
+
 
 def load_model(model, pretrained_path, load_to_cpu):
     print('Loading pretrained model from {}'.format(pretrained_path))
@@ -59,8 +71,10 @@ def load_model(model, pretrained_path, load_to_cpu):
     model.load_state_dict(pretrained_dict, strict=False)
     return model
 
+
 if __name__ == '__main__':
     torch.set_grad_enabled(False)
+
     cfg = cfg_re50
     # net and model
     net = RetinaFace(cfg=cfg, phase = 'test')
@@ -68,85 +82,143 @@ if __name__ == '__main__':
     net.eval()
     print('Finished loading model!')
     print(net)
+    cudnn.benchmark = False
 
-    cudnn.benchmark = True
-
-    torch.cuda.set_device(2)
+    torch.cuda.set_device(3)
     device = torch.device("cpu" if args.cpu else "cuda")
     net = net.to(device)
 
-    resize = 1
 
-    # testing begin
-    #I removed the unneccessary for loop
+    # Multi-scale and flip settings.
+    # If not evaluating at original size, use multi-scale.
+    # These numbers represent target values for the shorter side of the image
+    TEST_SCALES = [500, 800, 1100, 1400, 1700] if not args.origin_size else None
+    do_flip = args.flipping  # Enable horizontal flip.
+    max_size = 2150  # Maximum allowed size for the longer side.
 
-    #image_path = "0_Parade_marchingband_1_379.jpg"
-    image_path = "7_Cheering_Cheering_7_50.jpg"
+    #image_name = "7_Cheering_Cheering_7_50.jpg"
+    image_name = "0_Parade_marchingband_1_379.jpg"
 
+    image_path = "./example-pictures/input/"+image_name
     img_raw = cv2.imread(image_path, cv2.IMREAD_COLOR)
-    img = np.float32(img_raw)
-    im_height, im_width, _ = img.shape
-    scale = torch.Tensor([img.shape[1], img.shape[0], img.shape[1], img.shape[0]])
-    avg_rgb = torch.from_numpy(img).mean(dim=(0, 1))
-    img -= (104, 117, 123)
-    #As a result, the new shape becomes (3, 624, 1024). This is especially useful when working with libraries like PyTorch, which typically
-    # expect image data to have the channels as the first dimension (i.e., channels-first format).
-    img = img.transpose(2, 0, 1)
-    # When you call .unsqueeze(0) on a PyTorch tensor, it adds a new dimension at index 0. This means if your original tensor has shape (C, H, W),
-    # after applying .unsqueeze(0), its shape becomes (1, C, H, W).
-    # Here, the new dimension (of size 1) is added at position 0, effectively converting your image tensor to a batch containing one image.
-    img = torch.from_numpy(img).unsqueeze(0)
-    img = img.to(device)
-    scale = scale.to(device)
-    tic = time.time()
-    #loc: (1, 26240, 4)
 
+    original_width = img_raw.shape[1]
 
-    #conf: (1, 26240, 2)
-    #landms: (1, 26240, 10)
-    loc, conf = net(img)  # forward pass
-    print('net forward time: {:.4f}'.format(time.time() - tic))
-    #cfg ist ein JSON / dictionary. siehe data / config.py
-    priorbox = PriorBox(cfg, image_size=(im_height, im_width))
-    priors = priorbox.vectorized_forward()
-    priors = priors.to(device)
-    prior_data = priors.data
-    boxes = decode(loc.data.squeeze(0), prior_data, cfg['variance'])
-    boxes = boxes * scale / resize
-    boxes = boxes.cpu().numpy()
-    scores = conf.squeeze(0).data.cpu().numpy()[:, 1]
+    im_shape = img_raw.shape
+    im_size_min = np.min(im_shape[0:2])
+    im_size_max = np.max(im_shape[0:2])
 
-    # ignore low scores
-    inds = np.where(scores > args.confidence_threshold)[0]
-    boxes = boxes[inds]
+    aggregated_dets = []  # Accumulate detections from different scales/flips.
 
-    scores = scores[inds]
-    # keep top-K before NMS
-    order = scores.argsort()[::-1][:args.top_k]
-    boxes = boxes[order]
+    if TEST_SCALES is not None:
+        scales_to_test = TEST_SCALES
+    else:
+        scales_to_test = [None]  # Only one scale (original size).
 
-    scores = scores[order]
-    # do NMS
-    dets = np.hstack((boxes, scores[:, np.newaxis])).astype(np.float32, copy=False)
-    keep = py_cpu_nms(dets, args.nms_threshold)
-    # keep = nms(dets, args.nms_threshold,force_cpu=args.cpu)
-    dets = dets[keep, :]
+    # Loop over test scales.
+    for scale_val in scales_to_test:
+        if scale_val is None:
+            resize = 1.0
+        else:
+            # Use pyramid branch parameters from MXNet
+            target_size_pyr = 800
+            max_size_pyr = 1200
+            im_scale0 = float(target_size_pyr) / float(im_size_min)
+            if np.round(im_scale0 * im_size_max) > max_size_pyr:
+                im_scale0 = float(max_size_pyr) / float(im_size_max)
+            # Scale factor is computed relative to the pyramid target size (800)
+            resize = float(scale_val) / float(target_size_pyr) * im_scale0
 
-    # keep top-K faster NMS
-    dets = dets[:args.keep_top_k, :]
+        # Loop over flip states.
+        for flip in [False, True] if do_flip else [False]:
+            # Prepare image: flip if required.
+            if flip:
+                img_proc = cv2.flip(img_raw, 1)
+            else:
+                img_proc = img_raw.copy()
+            # Resize.
+            if resize != 1.0:
+                img_resized = cv2.resize(img_proc, None, fx=resize, fy=resize, interpolation=cv2.INTER_LINEAR)
+            else:
+                img_resized = img_proc.copy()
 
-    # show image
-    if args.save_image:
-        for b in dets:
-            if b[4] < args.vis_thres:
+            im_height, im_width, _ = img_resized.shape
+            # Scale tensor for converting network outputs back.
+            scale_tensor = torch.Tensor([im_width, im_height, im_width, im_height]).to(device)
+
+            # Preprocessing: subtract mean (BGR) and transpose.
+            img_input = np.float32(img_resized)
+            img_input -= (104, 117, 123)
+            img_input = img_input.transpose(2, 0, 1)  # Convert to C x H x W.
+            img_input = torch.from_numpy(img_input).unsqueeze(0)
+            img_input = img_input.to(device)
+
+            # Forward pass.
+            with torch.no_grad():
+                loc, conf = net(img_input)
+            # Generate prior boxes and decode detections.
+            priorbox = PriorBox(cfg, image_size=(im_height, im_width))
+            with torch.no_grad():
+                priors = priorbox.vectorized_forward().float()
+                priors = priors.to(device)
+            prior_data = priors.data
+            boxes = decode(loc.data.squeeze(0), prior_data, cfg['variance'])
+            # Convert boxes to original image coordinates.
+            boxes = boxes * scale_tensor / resize
+            boxes = boxes.cpu().numpy()
+
+            boxes = clip_boxes(boxes, img_raw.shape[:2])
+
+            scores = conf.squeeze(0).data.cpu().numpy()[:, 1]
+
+            # Filter low confidence detections.
+            inds = np.where(scores > args.confidence_threshold)[0]
+            if len(inds) == 0:
                 continue
-            text = "{:.4f}".format(b[4])
-            b = list(map(int, b))
-            cv2.rectangle(img_raw, (b[0], b[1]), (b[2], b[3]), (0, 0, 255), 2)
-            cx = b[0]
-            cy = b[1] + 12
-            cv2.putText(img_raw, text, (cx, cy),
-                        cv2.FONT_HERSHEY_DUPLEX, 0.5, (255, 255, 255))
-        # save image
-        name = "test.jpg"
-        cv2.imwrite(name, img_raw)
+            boxes = boxes[inds]
+            scores_selected = scores[inds]
+
+            # Unflip boxes if the image was flipped.
+            if flip:
+                x1 = boxes[:, 0].copy()
+                x2 = boxes[:, 2].copy()
+                boxes[:, 0] = original_width - x2 - 1
+                boxes[:, 2] = original_width - x1 - 1
+
+            # Stack boxes and scores.
+            dets = np.hstack((boxes, scores_selected[:, np.newaxis])).astype(np.float32, copy=False)
+            aggregated_dets.append(dets)
+
+
+    # Combine detections from all scales and flip passes.
+    all_dets = np.vstack(aggregated_dets)
+
+    # Apply box voting or nms
+    if args.nms:
+        keep = py_cpu_nms(all_dets, args.nms_threshold)
+        # keep = nms(dets, args.nms_threshold,force_cpu=args.cpu)
+        all_dets = all_dets[keep, :]
+
+        # keep top-K faster NMS
+        final_dets = all_dets[:args.keep_top_k, :]
+        appendix = "_processed_simple_nms.jpg"
+    else:
+        final_dets = bbox_vote(all_dets, args.nms_threshold, args.keep_top_k)
+        appendix = "_processed_simple_boxvoting.jpg"
+
+    for b in final_dets:
+        if b[4] < args.vis_thres:
+            continue
+        text = "{:.4f}".format(b[4])
+        b = list(map(int, b))
+        cv2.rectangle(img_raw, (b[0], b[1]), (b[2], b[3]), (0, 0, 255), 2)
+        cx = b[0]
+        cy = b[1] + 12
+        cv2.putText(img_raw, text, (cx, cy),
+                    cv2.FONT_HERSHEY_DUPLEX, 0.5, (255, 255, 255))
+    # save image
+    save_path = "./example-pictures/output/"
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
+    name = save_path + str(image_name) + appendix
+    cv2.imwrite(name, img_raw)
