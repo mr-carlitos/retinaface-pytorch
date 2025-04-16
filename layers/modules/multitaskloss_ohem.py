@@ -1,22 +1,22 @@
+##### This code was mostly written by the original PyTorch authors
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
-from utils.box_utils import match, log_sum_exp
+from utils.box_utils import match_ohem, log_sum_exp
 from data import cfg_re50
 GPU = cfg_re50['gpu_train']
 
-class MultiBoxLoss(nn.Module):
+class MultiTaskLossWithOHEM(nn.Module):
     """SSD Weighted Loss Function
     Compute Targets:
         1) Produce Confidence Target Indices by matching  ground truth boxes
            with (default) 'priorboxes' that have jaccard index > threshold parameter
-           (default threshold: 0.5).
         2) Produce localization target by 'encoding' variance into offsets of ground
            truth boxes and their matched  'priorboxes'.
         3) Hard negative mining to filter the excessive number of negative examples
            that comes with using a large number of default bounding boxes.
-           (default negative:positive ratio 3:1)
+
     Objective Loss:
         L(x,c,l,g) = (Lconf(x, c) + αLloc(x,l,g)) / N
         Where, Lconf is the CrossEntropy Loss and Lloc is the SmoothL1 Loss
@@ -29,13 +29,13 @@ class MultiBoxLoss(nn.Module):
         See: https://arxiv.org/pdf/1512.02325.pdf for more details.
     """
 
-    def __init__(self, num_classes, iou_threshold_background, iou_threshold_foreground, neg_pos_ratio):
-        super(MultiBoxLoss, self).__init__()
+    def __init__(self, num_classes, iou_threshold_background, iou_threshold_foreground, neg_pos_ratio, variance):
+        super(MultiTaskLossWithOHEM, self).__init__()
         self.num_classes = num_classes
         self.threshold_background = iou_threshold_background
         self.threshold_foreground = iou_threshold_foreground
         self.negpos_ratio = neg_pos_ratio
-        self.variance = [0.1, 0.2]
+        self.variance = variance
 
     def forward(self, predictions, priors, targets):
         """Multibox Loss
@@ -50,7 +50,7 @@ class MultiBoxLoss(nn.Module):
                 shape: [batch_size,num_objs,5] (last idx is the label).
         """
         #conf_data is (batch_size, anchors, 2) -> so the innerst element has size 2 -> but its not that these two elements sum to 1
-        loc_data, conf_data, landm_data = predictions
+        loc_data, conf_data = predictions
         priors = priors
         num = loc_data.size(0)
         num_priors = (priors.size(0))
@@ -58,54 +58,40 @@ class MultiBoxLoss(nn.Module):
         # match priors (default boxes) and ground truth boxes
         # torch.Tensor() -> This creates a tensor with uninitialized memory. The values in the tensor are essentially garbage/random values that were in memory at that location
         loc_t = torch.Tensor(num, num_priors, 4)
-        landm_t = torch.Tensor(num, num_priors, 10)
         conf_t = torch.LongTensor(num, num_priors)
         for idx in range(num):
             truths = targets[idx][:, :4].data
             labels = targets[idx][:, -1].data
-            landms = targets[idx][:, 4:14].data
             defaults = priors.data
 
             # match’s role is to assign each of the many predefined anchor (prior) boxes to a ground truth box (or mark it as background) based on the
             # intersection over union (IoU) overlap.
             # It then encodes the targets (box offsets and landmark offsets) that the network will learn to predict.
             # Everything is saved in the loc_t, conf_t and landm_t tensors
-            match(self.threshold_background, self.threshold_foreground, truths, defaults, self.variance, labels, landms, loc_t, conf_t, landm_t, idx)
+            match_ohem(self.threshold_background, self.threshold_foreground, truths, defaults, self.variance, labels, loc_t, conf_t, idx)
         if GPU:
             loc_t = loc_t.cuda()
             conf_t = conf_t.cuda()
-            landm_t = landm_t.cuda()
 
         zeros = torch.tensor(0).cuda()
 
-        # landm Loss (Smooth L1)
-        # Shape: [batch,num_priors,10]
+        ignored_tensor = torch.tensor(-1).cuda()
+        ignored = conf_t == ignored_tensor
+        #variable for debugging, not used by code
+        ignored_sum = ignored.long().sum(1, keepdim = True)
 
-        # pos1 identifies all anchors labeled as positive (i.e. matched to a face).
-        pos1 = conf_t > zeros
+        # pos holds the indices of the positives
+        pos = conf_t > zeros
+        # variable for debugging, not used by code
+        pos_sum = pos.long().sum(1, keepdim=True)
 
-        # counts positive anchors per image
-        num_pos_landm = pos1.long().sum(1, keepdim=True)
+        #needed for the gather() function later. We will temporarily set the conf values of the ignored entries to 1.
+        pos_and_ignored = conf_t != zeros
+        conf_t[pos_and_ignored] = 1
 
-        # total number of positive anchors (with a minimum of 1 to avoid division by zero). N1 incorporates the pos anchors from ALL samples in the batch
-        N1 = max(num_pos_landm.data.sum().float(), 1)
-
-        #### Now, for the first time in this function, we start working with the model output predictions
-
-        # expand_as(landm_data) replicates the last dimension 10 times
-        pos_idx1 = pos1.unsqueeze(pos1.dim()).expand_as(landm_data)
-
-        # Using broadcasting (via unsqueeze and expand_as), the predicted landmark offsets (landm_data) and the target landmark offsets (landm_t) are selected only for the positive anchors.
-        landm_p = landm_data[pos_idx1].view(-1, 10)
-        landm_t = landm_t[pos_idx1].view(-1, 10)
-        loss_landm = F.smooth_l1_loss(landm_p, landm_t, reduction='sum')
-
-        # Now: conf_t contains 1 (for face boxes) or 0 (background) for each anchor for each image in the current batch
-        pos = conf_t != zeros
-        conf_t[pos] = 1
-
-        num_pos_test = pos.long().sum(1, keepdim=True)
-        N_test = max(num_pos_test.data.sum().float(), 1)
+        background = conf_t == zeros
+        # variable for debugging, not used by code
+        background_sum = background.long().sum(1, keepdim=True)
 
         # Localization Loss (Smooth L1)
         # Shape: [batch,num_priors,4]
@@ -127,7 +113,10 @@ class MultiBoxLoss(nn.Module):
 
         # Hard Negative Mining
         # Hard negative mining selects the negatives that the network is getting most wrong—that is, the negatives with very high loss values.
-        loss_c[pos.view(-1, 1)] = 0 # filter out pos boxes for now
+        pos_view = pos.view(-1, 1)
+        ignored_view = ignored.view(-1, 1)
+        loss_c[pos_view] = 0 # filter out pos boxes for now
+        loss_c[ignored_view] = 0 # filter out ignored boxes
         loss_c = loss_c.view(num, -1)
         test_loss_values_negatives_sorted, loss_idx = loss_c.sort(1, descending=True)
         # This second sort doesn't sort the losses again; instead, it tells you the rank (position) of each anchor in the descending order.
@@ -150,6 +139,5 @@ class MultiBoxLoss(nn.Module):
         N = max(num_pos.data.sum().float(), 1)
         loss_l /= N
         loss_c /= N
-        loss_landm /= N1
 
-        return loss_l, loss_c, loss_landm
+        return loss_l, loss_c

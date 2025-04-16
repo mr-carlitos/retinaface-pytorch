@@ -1,11 +1,10 @@
 import torch
 import torch.nn as nn
-import torchvision.models.detection.backbone_utils as backbone_utils
 import torchvision.models._utils as _utils
 import torch.nn.functional as F
 from collections import OrderedDict
 from data.config_transform import transform_layer_config
-
+from models.net import conv_bn1X1
 from models.net import FPN as FPN
 from models.net import SSH as SSH
 
@@ -32,17 +31,6 @@ class BboxHead(nn.Module):
 
         return out.view(out.shape[0], -1, 4)
 
-class LandmarkHead(nn.Module):
-    def __init__(self, inchannels, num_anchors):
-        super(LandmarkHead, self).__init__()
-        self.conv1x1 = nn.Conv2d(inchannels, num_anchors*10, kernel_size=(1,1), stride=1, padding=0)
-
-    def forward(self,x):
-        out = self.conv1x1(x)
-        out = out.permute(0,2,3,1).contiguous()
-
-        return out.view(out.shape[0], -1, 10)
-
 class RetinaFace(nn.Module):
     def __init__(self, cfg = None, phase = 'train'):
         """
@@ -66,29 +54,34 @@ class RetinaFace(nn.Module):
         self.backbone = None
         in_channels_list = list()
 
-        if cfg['name'] == 'Resnet50-11k':
+        if cfg['backbone_name'] == 'Resnet50-11k':
             import importlib.util
             import sys
 
             # Load the module using importlib.util
-            spec = importlib.util.spec_from_file_location("MainModel", "./resnet-50-11k/resnet-50-ImageNet11k-final.py")
+            spec = importlib.util.spec_from_file_location("MainModel", "/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/resnet-50-11k/resnet-50-ImageNet11k-final.py")
             MainModel = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(MainModel)
 
             # Register the module in sys.modules with the expected name
             sys.modules["MainModel"] = MainModel
 
-            self.backbone = torch.load('./resnet-50-11k/resnet-50-ImageNet11k-final.pth')
+            self.backbone = torch.load('/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/resnet-50-11k/resnet-50-ImageNet11k-final.pth', weights_only=False)
             self.backbone.train()
 
-            # For FPN
-            for layer_idx in return_layers_sorted:
-                if layer_idx == 3:
-                    in_channels_list.append(int(in_channels_stage * (2**layer_idx)))
-                else:
-                    in_channels_list.append(int(in_channels_stage * (2**(layer_idx-1))))
+            if cfg['featuremaps_at_end_of_stage']:
+                # For FPN
+                for layer_idx in return_layers_sorted:
+                    in_channels_list.append(int(in_channels_stage * (2 ** layer_idx)))
+            else:
+                # For FPN
+                for layer_idx in return_layers_sorted:
+                    if layer_idx == 3:
+                        in_channels_list.append(int(in_channels_stage * (2**layer_idx)))
+                    else:
+                        in_channels_list.append(int(in_channels_stage * (2**(layer_idx-1))))
 
-        elif cfg['name'] == 'Resnet50-1k':
+        elif cfg['backbone_name'] == 'Resnet50-1k':
             import torchvision.models as models
             resnet_pytorched_backbone = models.resnet50(pretrained=cfg['pretrain'])
             print("Loaded ResNet50-1k as backbone :)")
@@ -102,11 +95,16 @@ class RetinaFace(nn.Module):
         
         else:
             self.backbone = None
-            raise Exception("Invalid 'name' parameter in config. No valid backbone!")
+            raise Exception("Invalid 'backbone-name' parameter in config. No valid backbone!")
         # out_channels_fpn is 256
         out_channels_fpn = cfg['out_channel']
 
-        self.fpn = FPN(in_channels_list, out_channels_fpn)
+        if cfg['apply_FPN']:
+            self.fpn = FPN(in_channels_list, out_channels_fpn)
+        else:
+            self.conv1x1list = nn.ModuleList()
+            for layer_index in range(len(self.cfg['return_layers'])):
+                self.conv1x1list.append(conv_bn1X1(in_channels_list[layer_index], out_channels_fpn, stride = 1))
 
         self.context_modules_list = nn.ModuleList()
 
@@ -117,8 +115,6 @@ class RetinaFace(nn.Module):
 
         self.ClassHead = self._make_class_head(fpn_num=number_of_featuremaps, inchannels=out_channels_fpn, anchor_num=anchor_num)
         self.BboxHead = self._make_bbox_head(fpn_num=number_of_featuremaps, inchannels=out_channels_fpn, anchor_num=anchor_num)
-        self.LandmarkHead = self._make_landmark_head(fpn_num=number_of_featuremaps, inchannels=out_channels_fpn, anchor_num=anchor_num)
-
         ##### CARLOS CODE ENDS HERE #######################
 
     def _make_class_head(self, fpn_num, inchannels, anchor_num):
@@ -133,52 +129,51 @@ class RetinaFace(nn.Module):
             bboxhead.append(BboxHead(inchannels, anchor_num))
         return bboxhead
 
-    def _make_landmark_head(self, fpn_num, inchannels, anchor_num):
-        landmarkhead = nn.ModuleList()
-        for i in range(fpn_num):
-            landmarkhead.append(LandmarkHead(inchannels, anchor_num))
-        return landmarkhead
-
-    def forward(self,inputs):
+    def forward(self,x):
         ##### CARLOS CODE STARTS HERE #######################
-        #TODO: Move these lines of code to a function so that RetinaFace object is clean
-        if self.cfg['name'] == 'Resnet50-11k':
-            out_raw = self.backbone.extract_features(inputs)
+        if self.cfg['backbone_name'] == 'Resnet50-11k':
+            out_raw = self.backbone.orchestrate(x, self.cfg['featuremaps_at_end_of_stage'])
             indices = sorted(self.cfg['return_layers'].copy())
             out_filtered = list(out_raw[i] for i in indices)
 
-            out = OrderedDict()
+            x = OrderedDict()
             for idx, key in enumerate(indices):
-                out[key] = out_filtered[idx]
+                x[key] = out_filtered[idx]
 
         else:
-            out = self.backbone(inputs)
+            x = self.backbone(x)
 
-        # FPN
-        fpn = self.fpn(out)
+        if self.cfg['apply_FPN']:
+            # FPN
+            intermediate = self.fpn(x)
+        else:
+            intermediate = list()
+            j = 0
+            for conv1x1 in self.conv1x1list:
+                intermediate.append(conv1x1(x[j]))
+                j += 1
 
         if self.cfg['introduce_P6'] and 3 in self.cfg['return_layers']:
             #Remember that out is a dict, not a list. So we need to do out[3]
-            feature_P6 = self.P6(out[3])
-            fpn.append(feature_P6)
+            feature_P6 = self.P6(x[3])
+            intermediate.append(feature_P6)
 
         # Context Module
         i = 0
-        features = list()
+        x = list()
         for context_module in self.context_modules_list:
-            features.append(context_module(fpn[i]))
+            x.append(context_module(intermediate[i]))
             i += 1
 
         ##### CARLOS CODE ENDS HERE #######################
-        bbox_regressions = torch.cat([self.BboxHead[i](feature) for i, feature in enumerate(features)], dim=1)
-        classifications = torch.cat([self.ClassHead[i](feature) for i, feature in enumerate(features)],dim=1)
-        ldm_regressions = torch.cat([self.LandmarkHead[i](feature) for i, feature in enumerate(features)], dim=1)
+        bbox_regressions = torch.cat([self.BboxHead[i](feature) for i, feature in enumerate(x)], dim=1)
+        classifications = torch.cat([self.ClassHead[i](feature) for i, feature in enumerate(x)],dim=1)
 
         if self.phase == 'train':
-            output = (bbox_regressions, classifications, ldm_regressions)
+            x = (bbox_regressions, classifications)
         else:
-            output = (bbox_regressions, F.softmax(classifications, dim=-1), ldm_regressions)
-        return output
+            x = (bbox_regressions, F.softmax(classifications, dim=-1))
+        return x
 
     ##### CARLOS CODE STARTS HERE #######################
     def create_P6(self):

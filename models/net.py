@@ -1,10 +1,6 @@
-import time
 import torch
 import torch.nn as nn
-import torchvision.models._utils as _utils
-import torchvision.models as models
 import torch.nn.functional as F
-from torch.autograd import Variable
 
 def conv_bn(inp, oup, stride = 1, leaky = 0):
     return nn.Sequential(
@@ -26,17 +22,6 @@ def conv_bn1X1(inp, oup, stride, leaky=0):
         nn.LeakyReLU(negative_slope=leaky, inplace=True)
     )
 
-def conv_dw(inp, oup, stride, leaky=0.1):
-    return nn.Sequential(
-        nn.Conv2d(inp, inp, 3, stride, 1, groups=inp, bias=False),
-        nn.BatchNorm2d(inp),
-        nn.LeakyReLU(negative_slope= leaky,inplace=True),
-
-        nn.Conv2d(inp, oup, 1, 1, 0, bias=False),
-        nn.BatchNorm2d(oup),
-        nn.LeakyReLU(negative_slope= leaky,inplace=True),
-    )
-
 class SSH(nn.Module):
     def __init__(self, in_channel, out_channel):
         super(SSH, self).__init__()
@@ -53,22 +38,22 @@ class SSH(nn.Module):
         self.conv7X7_2 = conv_bn(out_channel//4, out_channel//4, stride=1, leaky = leaky)
         self.conv7x7_3 = conv_bn_no_relu(out_channel//4, out_channel//4, stride=1)
 
-    def forward(self, input):
-        conv3X3 = self.conv3X3(input)
+    def forward(self, x):
+        conv3X3 = self.conv3X3(x)
 
-        conv5X5_1 = self.conv5X5_1(input)
+        conv5X5_1 = self.conv5X5_1(x)
         conv5X5 = self.conv5X5_2(conv5X5_1)
 
         conv7X7_2 = self.conv7X7_2(conv5X5_1)
         conv7X7 = self.conv7x7_3(conv7X7_2)
 
-        out = torch.cat([conv3X3, conv5X5, conv7X7], dim=1)
+        x = torch.cat([conv3X3, conv5X5, conv7X7], dim=1)
 
-        out = F.relu(out)
+        x = F.relu(x)
         # Apply DCN if enabled
         #if self.use_dcn:
         #    out = self.dcn(out)
-        return out
+        return x
 
 class FPN(nn.Module):
     def __init__(self, in_channels_list, out_channels):
@@ -109,7 +94,6 @@ class FPN(nn.Module):
             # size(3): Width
             up = F.interpolate(output_variable, size=[output_list[idx].size(2), output_list[idx].size(3)], mode="nearest")
             addition = output_list[idx] + up
-            # TODO: Find out why we use a conv layer with activation here, shouldn't it be one without, just as the guys in the FPN paper say?
             merged = self.merge_list[idx-1](addition)
             final_outputs.append(merged)
         final_outputs = list(reversed(final_outputs))

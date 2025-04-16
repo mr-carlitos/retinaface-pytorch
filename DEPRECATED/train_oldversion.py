@@ -6,7 +6,7 @@ import torch.backends.cudnn as cudnn
 import argparse
 import torch.utils.data as data
 from data import WiderFaceDetection, detection_collate, preproc, cfg_re50
-from layers.modules import MultiBoxLoss
+from layers.modules import MultiTaskLossWithOHEM, MultiTaskLossWithFocalLoss
 from layers.functions.prior_box import PriorBox
 import time
 import datetime
@@ -26,18 +26,15 @@ parser.add_argument('--gamma', default=0.1, type=float, help='Gamma update for S
 parser.add_argument('--save_folder', default='./weights/', help='Location to save checkpoint models')
 
 args = parser.parse_args()
-torch.cuda.set_device(3)
 
 if not os.path.exists(args.save_folder):
     os.mkdir(args.save_folder)
 
 cfg = cfg_re50
 
-#TODO: Check if this rgb_mean is true
-rgb_mean = (104, 117, 123) # bgr order
+rgb_mean = (104, 117, 124) # bgr order
 num_classes = 2
 img_dim = cfg['image_size']
-num_gpu = cfg['ngpu']
 batch_size = cfg['batch_size']
 max_epoch = cfg['epoch']
 gpu_train = cfg['gpu_train']
@@ -50,6 +47,8 @@ gamma = args.gamma
 training_dataset = args.training_dataset
 save_folder = args.save_folder
 
+device_ids = [2, 3]
+torch.cuda.set_device(device_ids[0])
 net = RetinaFace(cfg=cfg)
 print("Printing net...")
 print(net)
@@ -69,25 +68,28 @@ if args.resume_net is not None:
         new_state_dict[name] = v
     net.load_state_dict(new_state_dict)
 
+
+num_gpu = len(device_ids)
 if num_gpu > 1 and gpu_train:
-    #TODO: Find out how to assign specific GPU indexes here, so I assign the GPUs that are not used currently on rolf
-    device_ids = [5, 7]  # list the GPU indices you want to use
-    net = torch.nn.DataParallel(net, device_ids=device_ids).cuda(device_ids[0])
+    # Set the primary CUDA device to the first in your list
+    net = torch.nn.DataParallel(net, device_ids=device_ids).cuda()
 else:
     net = net.cuda()
 
-cudnn.benchmark = True
+#cudnn.benchmark = True
 
 iou_threshold_background = cfg['iou_threshold_background']
 iou_threshold_foreground = cfg['iou_threshold_foreground']
-neg_pos_ratio = cfg['neg_pos_ratio']
+variances = cfg['variance']
+focal_gamma = cfg['focal_gamma']
+focal_alpha = cfg['focal_alpha']
 
 optimizer = optim.SGD(net.parameters(), lr=initial_lr, momentum=momentum, weight_decay=weight_decay)
-criterion = MultiBoxLoss(num_classes, iou_threshold_background, iou_threshold_foreground, neg_pos_ratio)
+criterion = MultiTaskLossWithFocalLoss(num_classes, iou_threshold_background, variances, focal_gamma, focal_alpha)
 
 priorbox = PriorBox(cfg, image_size=(img_dim, img_dim))
 with torch.no_grad():
-    priors = priorbox.forward()
+    priors = priorbox.vectorized_forward()
     priors = priors.cuda()
 
 def train():
@@ -122,7 +124,7 @@ def train():
         load_t0 = time.time()
         if iteration in stepvalues:
             step_index += 1
-        lr = adjust_learning_rate(optimizer, gamma, epoch, step_index, iteration, epoch_size)
+        lr = adjust_learning_rate(optimizer, gamma, epoch, step_index, iteration, epoch_size, args)
 
         # load train data
         images, targets = next(batch_iterator)
@@ -134,33 +136,39 @@ def train():
 
         # backprop
         optimizer.zero_grad()
-        loss_l, loss_c, loss_landm = criterion(out, priors, targets)
-        loss = cfg['loc_weight'] * loss_l + loss_c + loss_landm
+        loss_l, loss_c = criterion(out, priors, targets)
+        loss = loss_l + loss_c
         loss.backward()
         optimizer.step()
         load_t1 = time.time()
         batch_time = load_t1 - load_t0
         eta = int(batch_time * (max_iter - iteration))
-        print('Epoch:{}/{} || Epochiter: {}/{} || Iter: {}/{} || Loc: {:.4f} Cla: {:.4f} Landm: {:.4f} || LR: {:.8f} || Batchtime: {:.4f} s || ETA: {}'
+        print('Epoch:{}/{} || Epochiter: {}/{} || Iter: {}/{} || Loc: {:.4f} Cla: {:.4f} || LR: {:.8f} || Batchtime: {:.4f} s || ETA: {}'
               .format(epoch, max_epoch, (iteration % epoch_size) + 1,
-              epoch_size, iteration + 1, max_iter, loss_l.item(), loss_c.item(), loss_landm.item(), lr, batch_time, str(datetime.timedelta(seconds=eta))))
+              epoch_size, iteration + 1, max_iter, loss_l.item(), loss_c.item(), lr, batch_time, str(datetime.timedelta(seconds=eta))))
 
-    torch.save(net.state_dict(), save_folder + cfg['name'] + '_Final.pth')
+    torch.save(net.state_dict(), save_folder + cfg['name'] + '_Final_Carlos.pth')
     # torch.save(net.state_dict(), save_folder + 'Final_Retinaface.pth')
 
 
-def adjust_learning_rate(optimizer, gamma, epoch, step_index, iteration, epoch_size):
-    """Sets the learning rate
-    # Adapted from PyTorch Imagenet example:
-    # https://github.com/pytorch/examples/blob/master/imagenet/main.py
-    """
-    warmup_epoch = -1
-    if epoch <= warmup_epoch:
-        lr = 1e-6 + (initial_lr-1e-6) * iteration / (epoch_size * warmup_epoch)
+def adjust_learning_rate(optimizer, gamma, epoch, step_index, iteration, epoch_size, args):
+    """Sets the learning rate with warmup and decay.
+    The learning rate warms up from args.lr (e.g., 1e-3) to 10x args.lr (i.e., 1e-2) over 5 epochs."""
+    warmup_epoch = 5
+    lr_start = args.lr        # Starting learning rate (e.g., 1e-3)
+    lr_final = lr_start * 10  # Final learning rate after warmup (e.g., 1e-2)
+
+    if epoch < warmup_epoch:
+        # Linear warmup: interpolate between lr_start and lr_final over warmup_epoch epochs
+        progress = (epoch * epoch_size + iteration) / (warmup_epoch * epoch_size)
+        lr = lr_start + progress * (lr_final - lr_start)
     else:
-        lr = initial_lr * (gamma ** (step_index))
+        # After warmup, start with lr_final and apply step decay
+        lr = lr_final * (gamma ** step_index)
+
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
+
     return lr
 
 if __name__ == '__main__':

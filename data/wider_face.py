@@ -1,6 +1,3 @@
-import os
-import os.path
-import sys
 import torch
 import torch.utils.data as data
 import cv2
@@ -42,36 +39,19 @@ class WiderFaceDetection(data.Dataset):
         height, width, _ = img.shape
 
         labels = self.words[index]
-        annotations = np.zeros((0, 15))
+        annotations = np.zeros((0, 5))
         if len(labels) == 0:
             return annotations
         for idx, label in enumerate(labels):
-            annotation = np.zeros((1, 15))
+            annotation = np.zeros((1, 5))
             # bbox
             annotation[0, 0] = label[0]  # x1
             annotation[0, 1] = label[1]  # y1
             annotation[0, 2] = label[0] + label[2]  # x2
             annotation[0, 3] = label[1] + label[3]  # y2
 
-            # landmarks
-            annotation[0, 4] = label[4]    # l0_x
-            annotation[0, 5] = label[5]    # l0_y
-            annotation[0, 6] = label[7]    # l1_x
-            annotation[0, 7] = label[8]    # l1_y
-            annotation[0, 8] = label[10]   # l2_x
-            annotation[0, 9] = label[11]   # l2_y
-            annotation[0, 10] = label[13]  # l3_x
-            annotation[0, 11] = label[14]  # l3_y
-            annotation[0, 12] = label[16]  # l4_x
-            annotation[0, 13] = label[17]  # l4_y
-
-            #TODO: Check this if it makes sense
-            # so the target label depends on if we have landmark coordinates. if yes -> label = +1, else -1
-            if (annotation[0, 4] < 0):
-                annotation[0, 14] = -1
-            else:
-                annotation[0, 14] = 1
-
+            # cls / conf / labels. have different names
+            annotation[0, 4] = 1 # classification target equals 1
             annotations = np.append(annotations, annotation, axis=0)
         target = np.array(annotations)
         if self.preproc is not None:

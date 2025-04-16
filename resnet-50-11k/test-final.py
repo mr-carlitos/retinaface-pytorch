@@ -25,7 +25,15 @@ dummy_data = np.random.rand(1, 3, 640, 640)
 # Convert to torch.Tensor
 x = torch.from_numpy(dummy_data).float().cuda()
 output = model(x)
-featuremaps = model.extract_features(x)
-print(output.shape)
-print(output)
-print(type(featuremaps))
+with torch.no_grad():
+    featuremaps = model.extract_features_after_stage(x)
+    featuremaps_new = model.extract_features_after_stage_v2(x)
+
+listed = [torch.sum(torch.abs(featuremaps_new[i] - featuremaps[i])) for i in range(len(featuremaps))]
+tensored = torch.stack(listed)
+
+difference = torch.abs(tensored)
+summed = torch.sum(difference)
+
+print(difference)
+print(summed)

@@ -4,7 +4,7 @@ import random
 from utils.box_utils import matrix_iof
 
 
-def _crop(image, boxes, labels, landm, img_dim):
+def _crop(image, boxes, labels, img_dim):
     #boxes is a np array which holds the x1,y1,x2,y2 coordinates of the ground truth face boxes
     #image is one image (which may contain multiple faces), opened witz OpenCV
     height, width, _ = image.shape
@@ -49,8 +49,6 @@ def _crop(image, boxes, labels, landm, img_dim):
 
         boxes_t = boxes[mask_a].copy()
         labels_t = labels[mask_a].copy()
-        landms_t = landm[mask_a].copy()
-        landms_t = landms_t.reshape([-1, 5, 2])
 
         if boxes_t.shape[0] == 0:
             continue
@@ -64,12 +62,6 @@ def _crop(image, boxes, labels, landm, img_dim):
         boxes_t[:, 2:] = np.minimum(boxes_t[:, 2:], roi[2:])
         boxes_t[:, 2:] -= roi[:2]
 
-        # landm
-        landms_t[:, :, :2] = landms_t[:, :, :2] - roi[:2]
-        landms_t[:, :, :2] = np.maximum(landms_t[:, :, :2], np.array([0, 0]))
-        landms_t[:, :, :2] = np.minimum(landms_t[:, :, :2], roi[2:] - roi[:2])
-        landms_t = landms_t.reshape([-1, 10])
-
         # make sure that the cropped image contains at least one face > 16 pixel at training image scale
         b_w_t = (boxes_t[:, 2] - boxes_t[:, 0] + 1) / w * img_dim
         b_h_t = (boxes_t[:, 3] - boxes_t[:, 1] + 1) / h * img_dim
@@ -78,15 +70,14 @@ def _crop(image, boxes, labels, landm, img_dim):
         mask_b = np.minimum(b_w_t, b_h_t) > 0.0
         boxes_t = boxes_t[mask_b]
         labels_t = labels_t[mask_b]
-        landms_t = landms_t[mask_b]
 
         if boxes_t.shape[0] == 0:
             continue
 
         pad_image_flag = False
 
-        return image_t, boxes_t, labels_t, landms_t, pad_image_flag
-    return image, boxes, labels, landm, pad_image_flag
+        return image_t, boxes_t, labels_t, pad_image_flag
+    return image, boxes, labels, pad_image_flag
 
 #apply random color distortions to an image
 def _distort(image):
@@ -183,7 +174,7 @@ def _expand(image, boxes, fill, p):
 
 # This function randomly flips an image horizontally—and if it does,
 # it also adjusts the associated bounding boxes and facial landmarks so that they remain consistent with the flipped image.
-def _mirror(image, boxes, landms):
+def _mirror(image, boxes):
     _, width, _ = image.shape
     if random.randrange(2):
         #To reverse only the RGB channels for each pixel -> image_reversed = image[:, :, ::-1]
@@ -194,20 +185,7 @@ def _mirror(image, boxes, landms):
         #The slice 0::2 means "start at index 0 and take every second element."
         #The slice 2::-2 means "start at index 2 and go backwards in steps of 2."
         boxes[:, 0::2] = width - boxes[:, 2::-2]
-
-        # landm
-        landms = landms.copy()
-        landms = landms.reshape([-1, 5, 2])
-        landms[:, :, 0] = width - landms[:, :, 0]
-        tmp = landms[:, 1, :].copy()
-        landms[:, 1, :] = landms[:, 0, :]
-        landms[:, 0, :] = tmp
-        tmp1 = landms[:, 4, :].copy()
-        landms[:, 4, :] = landms[:, 3, :]
-        landms[:, 3, :] = tmp1
-        landms = landms.reshape([-1, 10])
-
-    return image, boxes, landms
+    return image, boxes
 
 
 def _pad_to_square(image, rgb_mean, pad_image_flag):
@@ -230,9 +208,6 @@ def _resize_subtract_mean(image, insize, rgb_mean):
 
     #Resize to size, defined in config.py (or cfg variable)
     image = cv2.resize(image, (insize, insize), interpolation=interp_method)
-    random_value = random.random()
-    if random_value < 0.1:
-        cv2.imwrite('./image_outputs/output_preproc_mean_not_substracted_'+str(random_value)+'.jpg', image)
     image = image.astype(np.float32)
     #remove mean. Subtracting the mean centers the pixel values around zero. This normalization step speeds up training and improves convergence.
     image -= rgb_mean
@@ -253,15 +228,14 @@ class preproc(object):
         boxes = targets[:, :4].copy()
         #labels: Are either 1 or -1, as preprocessed by __getitem__(self, index) in WiderFaceDetection(data.Dataset)
         labels = targets[:, -1].copy()
-        landm = targets[:, 4:-1].copy()
 
-        image_t, boxes_t, labels_t, landm_t, pad_image_flag = _crop(image, boxes, labels, landm, self.img_dim)
+        image_t, boxes_t, labels_t, pad_image_flag = _crop(image, boxes, labels, self.img_dim)
 
         image_t = _distort(image_t)
         #If image_t is not square yet: This function pads an image with a specified mean color to form a square image when needed, preserving the original content in the top-left corner.
         image_t = _pad_to_square(image_t,self.rgb_means, pad_image_flag)
 
-        image_t, boxes_t, landm_t = _mirror(image_t, boxes_t, landm_t)
+        image_t, boxes_t = _mirror(image_t, boxes_t)
 
         height, width, _ = image_t.shape
         # In _resize_subtract_mean, the image gets its 640 x 640 format.
@@ -272,11 +246,8 @@ class preproc(object):
         boxes_t[:, 0::2] /= width
         boxes_t[:, 1::2] /= height
 
-        landm_t[:, 0::2] /= width
-        landm_t[:, 1::2] /= height
-
         labels_t = np.expand_dims(labels_t, 1)
         #The normalized boxes and landmarks are combined with labels to form the final target tensor.
-        targets_t = np.hstack((boxes_t, landm_t, labels_t))
+        targets_t = np.hstack((boxes_t, labels_t))
 
         return image_t, targets_t

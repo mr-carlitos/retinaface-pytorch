@@ -10,7 +10,7 @@ from data import cfg_re50
 chosen_feature_map_index = 4
 
 # Set the drawing mode: choose from 'border', 'center', or 'both'
-draw_mode = 'center'
+draw_mode = 'both'
 
 # --- Utility: Decode anchors from center-size to (xmin, ymin, xmax, ymax) ---
 def point_form(boxes):
@@ -46,7 +46,7 @@ def draw_anchors_on_image(image_path, output_path):
 
     # Create PriorBox and generate anchors (in normalized coordinates)
     priorbox = PriorBox(cfg_re50, image_size=(target_size, target_size))
-    anchors = priorbox.forward()  # shape: [num_anchors, 4]
+    anchors = priorbox.vectorized_forward()  # shape: [num_anchors, 4]
 
     # Convert anchors to corner coordinates (still normalized)
     anchors_corners = point_form(anchors)

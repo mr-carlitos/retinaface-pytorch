@@ -1,3 +1,2 @@
-from .multibox_loss import MultiBoxLoss
-
-__all__ = ['MultiBoxLoss']
+from .multitaskloss_focalloss import MultiTaskLossWithFocalLoss
+from .multitaskloss_ohem import MultiTaskLossWithOHEM
