@@ -83,7 +83,7 @@ class RetinaFace(nn.Module):
 
         elif cfg['backbone_name'] == 'Resnet50-1k':
             import torchvision.models as models
-            resnet_pytorched_backbone = models.resnet50(pretrained=cfg['pretrain'])
+            resnet_pytorched_backbone = models.resnet50(pretrained=True)
             print("Loaded ResNet50-1k as backbone :)")
             #self.body -> First layer type where the inputs get fed through. It uses the backbone. 'return_layers': {'layer2': 1, 'layer3': 2, 'layer4': 3}.
             layer_dict = transform_layer_config(return_layers_sorted)

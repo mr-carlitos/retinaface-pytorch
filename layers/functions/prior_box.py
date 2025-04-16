@@ -9,7 +9,6 @@ class PriorBox(object):
         super(PriorBox, self).__init__()
         self.min_sizes = cfg['min_sizes']
         self.steps = cfg['steps']
-        self.clip = cfg['clip']
         self.image_size = image_size
         # feature_maps is created by iterating through the list steps which has INCREASING values
         self.feature_maps = [[ceil(self.image_size[0]/step), ceil(self.image_size[1]/step)] for step in self.steps]
@@ -45,9 +44,6 @@ class PriorBox(object):
         # So far, anchors is just a very long 1D list. But we want a matrix of shape (N, 4).
         # The -1 tells PyTorch to automatically calculate the number of rows so that the total number of elements remains the same.
         output = torch.Tensor(anchors).view(-1, 4)
-        # If self.clip is set to True, the anchor values are clamped to be within [0,1]: This ensures that no coordinate goes outside the normalized image range.
-        if self.clip:
-            output.clamp_(max=1, min=0)
         return output
 
 #CARLOS CODE: Implemented a vectorized version.
@@ -89,6 +85,5 @@ class PriorBox(object):
 
         # Concatenate anchors from all feature map levels.
         output = np.concatenate(anchors_all, axis=0)
-        if self.clip:
-            output = np.clip(output, 0, 1)
+
         return torch.from_numpy(output)

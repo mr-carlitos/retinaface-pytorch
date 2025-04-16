@@ -9,22 +9,24 @@ from layers.functions.prior_box import PriorBox
 from utils.nms.py_cpu_nms import py_cpu_nms
 import cv2
 from models.retinaface import RetinaFace
-from utils.box_utils import decode
+from utils.box_utils import decode, clip_boxes
 from utils.timer import Timer
 
 
 parser = argparse.ArgumentParser(description='Retinaface')
-parser.add_argument('-m', '--trained_model', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/weights/RetinaFace_baseline_withFPN.pth',
+parser.add_argument('-m', '--trained_model', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-04-14_RetinaFace_baseline_withFPN/RetinaFace_baseline_retrained_withFPN_14_04_2025_final.pth',
                     type=str, help='Trained state_dict file path to open')
-parser.add_argument('--origin_size', default=False, type=bool, help='Whether use origin image size to evaluate')
-parser.add_argument('--save_folder', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/validation/widerface_txt_folder_resize/', type=str, help='Dir to save txt results')
-parser.add_argument('--cpu', action="store_true", default=True, help='Use cpu inference')
+parser.add_argument('--origin_size', default=True, type=bool, help='Whether use origin image size to evaluate')
+parser.add_argument('--save_folder', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/validation/widerface_original_withclipping_2025-04-14/', type=str, help='Dir to save txt results')
+parser.add_argument('--cpu', action="store_true", default=False, help='Use cpu inference')
 parser.add_argument('--images_folder', default='/local/scratch/datasets/WiderFace/WIDER_val/images/', type=str, help='image dataset path')
 parser.add_argument('--input_val_txt', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/data/widerface/val/wider_val.txt', type=str, help='val txt path')
 parser.add_argument('--confidence_threshold', default=0.02, type=float, help='confidence_threshold')
 parser.add_argument('--nms_threshold', default=0.4, type=float, help='nms_threshold')
+parser.add_argument('--keep_top_k', default=750, type=int, help='keep_top_k')
 parser.add_argument('-s', '--save_image', action="store_true", default=False, help='show detection results')
-parser.add_argument('--vis_thres', default=0.5, type=float, help='visualization_threshold')
+parser.add_argument('--vis_thres', default=0.35, type=float, help='visualization_threshold')
+parser.add_argument('--flipping', default=True, type=bool, help='if we do flipping during evaluation pipeline')
 args = parser.parse_args()
 
 
@@ -76,7 +78,7 @@ if __name__ == '__main__':
     print(net)
     #cudnn.benchmark = True
 
-    torch.cuda.set_device(3)
+    torch.cuda.set_device(4)
     device = torch.device("cpu" if args.cpu else "cuda")
     net = net.to(device)
 
@@ -135,6 +137,7 @@ if __name__ == '__main__':
         boxes = decode(loc.data.squeeze(0), prior_data, cfg['variance'])
         boxes = boxes * scale / resize
         boxes = boxes.cpu().numpy()
+        boxes = clip_boxes(boxes, img_raw.shape[:2])
         scores = conf.squeeze(0).data.cpu().numpy()[:, 1]
 
         # ignore low scores
