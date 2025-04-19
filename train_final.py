@@ -38,7 +38,7 @@ def get_args():
     parser.add_argument('--gpu', type=int, default=None, help='GPU id to use, this parameter is used when you want to train only on a single GPU')
 
     # Checkpointing
-    parser.add_argument('--resume', default='', help='Resume from checkpoint')
+    parser.add_argument('--resume', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-04-16_RetinaFace_baseline_noFPN/RetinaFace_baseline_noFPN_16_04_2025_epoch_75.pth', help='Resume from checkpoint')
     parser.add_argument('--start_epoch', default=0, type=int, help='Start epoch for resuming training')
     parser.add_argument('--save_freq', default=5, type=int, help='Save checkpoint frequency (epochs)')
 
