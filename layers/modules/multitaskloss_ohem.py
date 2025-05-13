@@ -5,7 +5,6 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 from utils.box_utils import match_ohem, log_sum_exp
 from data import cfg_re50
-GPU = cfg_re50['gpu_train']
 
 class MultiTaskLossWithOHEM(nn.Module):
     """SSD Weighted Loss Function
@@ -29,13 +28,14 @@ class MultiTaskLossWithOHEM(nn.Module):
         See: https://arxiv.org/pdf/1512.02325.pdf for more details.
     """
 
-    def __init__(self, num_classes, iou_threshold_background, iou_threshold_foreground, neg_pos_ratio, variance):
+    def __init__(self, num_classes, iou_threshold_background, iou_threshold_foreground, neg_pos_ratio, variance, gpu_train):
         super(MultiTaskLossWithOHEM, self).__init__()
         self.num_classes = num_classes
         self.threshold_background = iou_threshold_background
         self.threshold_foreground = iou_threshold_foreground
         self.negpos_ratio = neg_pos_ratio
         self.variance = variance
+        self.gpu_train = gpu_train
 
     def forward(self, predictions, priors, targets):
         """Multibox Loss
@@ -69,7 +69,7 @@ class MultiTaskLossWithOHEM(nn.Module):
             # It then encodes the targets (box offsets and landmark offsets) that the network will learn to predict.
             # Everything is saved in the loc_t, conf_t and landm_t tensors
             match_ohem(self.threshold_background, self.threshold_foreground, truths, defaults, self.variance, labels, loc_t, conf_t, idx)
-        if GPU:
+        if self.gpu_train:
             loc_t = loc_t.cuda()
             conf_t = conf_t.cuda()
 

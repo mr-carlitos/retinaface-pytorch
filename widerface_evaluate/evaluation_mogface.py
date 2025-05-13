@@ -315,6 +315,8 @@ def voc_ap(rec, prec):
     Returns:
         float: The average precision value (area under the PR curve)
     """
+    #check_monotonicity(rec, prec)
+
     # correct AP calculation
     # first append sentinel values at the end
     mrec = np.concatenate(([0.], rec, [1.]))
@@ -328,6 +330,9 @@ def voc_ap(rec, prec):
     # to calculate area under PR curve, look for points
     # where X axis (recall) changes value
     # These are the transition points where we need to calculate the area
+    #test = mrec[1:]
+    #test2 = mrec[:-1]
+    #test3 = mrec[1:] != mrec[:-1]
     i = np.where(mrec[1:] != mrec[:-1])[0]
 
     # and sum (\Delta recall) * prec
@@ -335,6 +340,39 @@ def voc_ap(rec, prec):
     # Each rectangle's height is the precision at that recall level (mpre[i + 1])
     ap = np_round(np.sum((mrec[i + 1] - mrec[i]) * mpre[i + 1]))
     return ap
+
+
+def check_monotonicity(rec, prec):
+    """
+    Check if recall is monotonically increasing and precision is monotonically decreasing.
+
+    Args:
+        rec (np.ndarray): Array of recall values
+        prec (np.ndarray): Array of precision values
+
+    Returns:
+        tuple: (recall_is_increasing, precision_is_decreasing)
+    """
+    # Check if recall is monotonically increasing
+    recall_diffs = np.diff(rec)
+    recall_is_increasing = np.all(recall_diffs >= 0)
+
+    # Check if precision is monotonically decreasing
+    precision_diffs = np.diff(prec)
+    precision_is_decreasing = np.all(precision_diffs <= 0)
+
+    # Print detailed information
+    if not recall_is_increasing:
+        non_increasing_indices = np.where(recall_diffs < 0)[0]
+        print(f"Recall is not monotonically increasing at indices: {non_increasing_indices}")
+        print(f"Values at these points: {[(i, rec[i], rec[i + 1]) for i in non_increasing_indices]}")
+
+    if not precision_is_decreasing:
+        non_decreasing_indices = np.where(precision_diffs > 0)[0]
+        print(f"Precision is not monotonically decreasing at indices: {non_decreasing_indices}")
+        print(f"Values at these points: {[(i, prec[i], prec[i + 1]) for i in non_decreasing_indices]}")
+
+    return recall_is_increasing, precision_is_decreasing
 
 
 def evaluation_ap50(pred, gt_path):
@@ -406,7 +444,7 @@ def evaluation_ap50(pred, gt_path):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-p', '--pred', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-04-16_RetinaFace_baseline_noFPN/original')
+    parser.add_argument('-p', '--pred', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-05-12_RetinaFace_baseline_withFPN_gradientacc/like-mxnet/')
     parser.add_argument('-g', '--gt', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/widerface_evaluate/ground_truth')
     #parser.add_argument('-i', '--iter', default='140')
     #parser.add_argument('-d', '--det_result_txt', default=None)

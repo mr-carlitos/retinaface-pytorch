@@ -29,7 +29,7 @@ def get_args():
     parser.add_argument('--momentum', default=0.9, type=float, help='momentum')
     parser.add_argument('--weight_decay', default=5e-4, type=float, help='Weight decay for SGD')
     parser.add_argument('--gamma', default=0.1, type=float, help='Gamma update for SGD')
-    parser.add_argument('--save_folder', default='./save-checkpoints/2025-04-19_RetinaFace_baseline_FPN_featuremaps_at_end/', help='Location to save checkpoint models')
+    parser.add_argument('--save_folder', default='./save-checkpoints/2025-05-12_RetinaFace_baseline_withFPN_gradientacc/', help='Location to save checkpoint models')
 
     parser.add_argument('--batch_size', default=16, type=int, help='Location to save checkpoint models')
     parser.add_argument('--epoch', default=80, type=int, help='Location to save checkpoint models')
@@ -138,6 +138,7 @@ def get_model(cfg, args):
     # Move model to device and wrap with DDP if distributed
     net = net.to(args.device)
     if args.distributed:
+        net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(net)
         net = DDP(net, device_ids=[args.local_rank], output_device=args.local_rank, find_unused_parameters=True)
     elif torch.cuda.device_count() > 1:
         net = torch.nn.DataParallel(net)
@@ -226,6 +227,8 @@ def train(cfg, args):
     net = get_model(cfg, args)
     # Set model to training mode
     net.train()
+
+    accumulation_steps = 2
 
     # Initialize optimizer
     optimizer = optim.SGD(
@@ -326,9 +329,9 @@ def train(cfg, args):
 
             # Calculate loss
             loss_l, loss_c = criterion(out, priors, targets)
-            loss = (loss_l + loss_c)
+            loss = (loss_l + loss_c) / accumulation_steps
 
-            actual_loss = loss.item()
+            actual_loss = loss.item() * accumulation_steps
             # Update metrics
             losses.update(actual_loss, images.size(0))
             loc_losses.update(loss_l.item(), images.size(0))
@@ -337,8 +340,10 @@ def train(cfg, args):
             # Backward pass and optimizer
             loss.backward()
 
-            optimizer.step()
-            optimizer.zero_grad()
+            # Update model weights after accumulating gradients for accumulation_steps iterations
+            if (iteration + 1) % accumulation_steps == 0 or (iteration + 1 == len(data_loader)):
+                optimizer.step()
+                optimizer.zero_grad()
 
             # Measure elapsed time
             batch_time.update(time.time() - end)

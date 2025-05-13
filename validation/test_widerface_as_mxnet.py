@@ -20,10 +20,10 @@ from utils.timer import Timer
 
 
 parser = argparse.ArgumentParser(description='Retinaface')
-parser.add_argument('-m', '--trained_model', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-04-16_RetinaFace_baseline_noFPN/RetinaFace_baseline_noFPN_16_04_2025_final.pth',
+parser.add_argument('-m', '--trained_model', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-05-12_RetinaFace_baseline_withFPN_gradientacc/baseline_gradientacc_final.pth',
                     type=str, help='Trained state_dict file path to open')
 parser.add_argument('--origin_size', default=False, type=bool, help='Whether use origin image size to evaluate')
-parser.add_argument('--save_folder', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-04-16_RetinaFace_baseline_noFPN/like-mxnet/', type=str, help='Dir to save txt results')
+parser.add_argument('--save_folder', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-05-12_RetinaFace_baseline_withFPN_gradientacc/like-mxnet/', type=str, help='Dir to save txt results')
 parser.add_argument('--cpu', action="store_true", default=False, help='Use cpu inference')
 parser.add_argument('--images_folder', default='/local/scratch/datasets/WiderFace/WIDER_val/images/', type=str, help='image dataset path')
 parser.add_argument('--input_val_txt', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/data/widerface/val/wider_val.txt', type=str, help='val txt path')
@@ -84,10 +84,9 @@ if __name__ == '__main__':
     print(net)
     cudnn.benchmark = False
 
-    torch.cuda.set_device(0)
+    torch.cuda.set_device(2)
     device = torch.device("cpu" if args.cpu else "cuda")
     net = net.to(device)
-
 
     # Multi-scale and flip settings.
     # If not evaluating at original size, use multi-scale.
@@ -203,12 +202,6 @@ if __name__ == '__main__':
                 dets = np.hstack((boxes, scores_selected[:, np.newaxis])).astype(np.float32, copy=False)
                 aggregated_dets.append(dets)
 
-                del img_input, loc, conf, scale_tensor, priorbox, priors, prior_data
-                del boxes, scores
-
-                # Optionally clear the CUDA cache to force immediate release:
-                torch.cuda.empty_cache()
-
         if len(aggregated_dets) == 0:
             print("No detections for image {}".format(img_name))
             continue
@@ -257,5 +250,3 @@ if __name__ == '__main__':
                 os.makedirs("./results/")
             name = "./results/" + str(i) + ".jpg"
             cv2.imwrite(name, img_raw)
-
-        torch.cuda.empty_cache()

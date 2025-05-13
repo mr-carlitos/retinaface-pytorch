@@ -3,22 +3,31 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 def conv_bn(inp, oup, stride = 1, leaky = 0):
+    num_groups = max(1, oup // 32) #For GroupNorm
+
     return nn.Sequential(
         nn.Conv2d(inp, oup, 3, stride, 1, bias=False),
-        nn.BatchNorm2d(oup),
+        #nn.BatchNorm2d(oup),
+        nn.GroupNorm(num_groups,oup),
         nn.LeakyReLU(negative_slope=leaky, inplace=True)
     )
 
 def conv_bn_no_relu(inp, oup, stride):
+    num_groups = max(1, oup // 32) #For GroupNorm
+
     return nn.Sequential(
         nn.Conv2d(inp, oup, 3, stride, 1, bias=False),
-        nn.BatchNorm2d(oup),
+        nn.GroupNorm(num_groups, oup),
+        #nn.BatchNorm2d(oup),
     )
 
 def conv_bn1X1(inp, oup, stride, leaky=0):
+    num_groups = max(1, oup // 32) #For GroupNorm
+
     return nn.Sequential(
         nn.Conv2d(inp, oup, 1, stride, padding=0, bias=False),
-        nn.BatchNorm2d(oup),
+        #nn.BatchNorm2d(oup),
+        nn.GroupNorm(num_groups, oup),
         nn.LeakyReLU(negative_slope=leaky, inplace=True)
     )
 
@@ -62,6 +71,7 @@ class FPN(nn.Module):
         if (out_channels <= 64):
             leaky = 0.1
 
+        # Usually, in_channels_list = [128,256,512,2048] -> we need [2048,512,256,128]
         in_channels_list = list(reversed(in_channels_list))
 
         ##### CARLOS CODE STARTS HERE #######################
@@ -74,9 +84,11 @@ class FPN(nn.Module):
             self.merge_list.append(conv_bn(out_channels, out_channels, leaky = leaky))
 
     def forward(self, input):
-        # names = list(input.keys())
+        # input = OrderedDict, 128,256,512,2048
         input = list(input.values())
+        # input = List, 128,256,512,2048
         input = list(reversed(input))
+        # input = List, 2048,512,256,128
 
         output_list = list()
         for inp, layer in zip(input, self.fpn_list):

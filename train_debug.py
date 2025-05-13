@@ -1,3 +1,6 @@
+### CARLOS FILE
+### I used this file for debugging only, so in general it can be ignored
+
 from __future__ import print_function
 import os
 import torch
@@ -25,21 +28,27 @@ parser.add_argument('--weight_decay', default=5e-4, type=float, help='Weight dec
 parser.add_argument('--gamma', default=0.1, type=float, help='Gamma update for SGD')
 parser.add_argument('--save_folder', default='./weights/', help='Location to save checkpoint models')
 
+parser.add_argument('--batch_size', default=1, type=int, help='Location to save checkpoint models')
+parser.add_argument('--epoch', default=80, type=int, help='Location to save checkpoint models')
+parser.add_argument('--decay1', default=55, type=int, help='Location to save checkpoint models')
+parser.add_argument('--decay2', default=68, type=int, help='Location to save checkpoint models')
+parser.add_argument('--image_size', default=640, type=int, help='Location to save checkpoint models')
+parser.add_argument('--gpu_train', default=True, type=bool, help='Location to save checkpoint models')
+
 args = parser.parse_args()
-torch.cuda.set_device(2)
+torch.cuda.set_device(4)
 
 if not os.path.exists(args.save_folder):
     os.mkdir(args.save_folder)
 
 cfg = cfg_re50
 
-
 rgb_mean = (104, 117, 124) # bgr order
 num_classes = 2
-img_dim = cfg['image_size']
-batch_size = 1
-max_epoch = cfg['epoch']
-gpu_train = cfg['gpu_train']
+img_dim = args.image_size
+batch_size = args.batch_size
+max_epoch = args.epoch
+gpu_train = args.gpu_train
 
 num_workers = args.num_workers
 momentum = args.momentum
@@ -82,7 +91,7 @@ focal_gamma = cfg['focal_gamma']
 focal_alpha = cfg['focal_alpha']
 
 optimizer = optim.SGD(net.parameters(), lr=initial_lr, momentum=momentum, weight_decay=weight_decay)
-criterion = MultiTaskLossWithFocalLoss(num_classes, iou_threshold_background, variances, focal_gamma, focal_alpha)
+criterion = MultiTaskLossWithFocalLoss(num_classes, iou_threshold_background, variances, focal_gamma, focal_alpha, gpu_train)
 
 priorbox = PriorBox(cfg, image_size=(img_dim, img_dim))
 with torch.no_grad():
@@ -101,7 +110,7 @@ def train():
     epoch_size = math.ceil(len(dataset) / batch_size)
     max_iter = max_epoch * epoch_size
 
-    stepvalues = (cfg['decay1'] * epoch_size, cfg['decay2'] * epoch_size)
+    stepvalues = (args.decay1 * epoch_size, args.decay2 * epoch_size)
     step_index = 0
 
     if args.resume_epoch > 0:
@@ -113,7 +122,7 @@ def train():
         if iteration % epoch_size == 0:
             # create batch iterator
             batch_iterator = iter(data.DataLoader(dataset, batch_size, shuffle=True, num_workers=num_workers, collate_fn=detection_collate))
-            if (epoch % 10 == 0 and epoch > 0) or (epoch % 5 == 0 and epoch > cfg['decay1']):
+            if (epoch % 10 == 0 and epoch > 0) or (epoch % 5 == 0 and epoch > args.decay1):
                 torch.save(net.state_dict(), save_folder + cfg['name']+ '_epoch_' + str(epoch) + '.pth')
             epoch += 1
 

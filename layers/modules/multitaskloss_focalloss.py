@@ -7,7 +7,6 @@ import torch.nn.functional as F
 from utils.box_utils import match_focal_loss, log_sum_exp
 from data import cfg_re50
 from torchvision.ops import sigmoid_focal_loss
-GPU = cfg_re50['gpu_train']
 
 class MultiTaskLossWithFocalLoss(nn.Module):
     """Weighted Loss Function (inspired from SSD and Focal Loss)
@@ -29,13 +28,14 @@ class MultiTaskLossWithFocalLoss(nn.Module):
         See: https://arxiv.org/pdf/1512.02325.pdf and https://arxiv.org/pdf/1708.02002 for more details.
     """
 
-    def __init__(self, num_classes, iou_threshold_background, variance, focal_gamma=2.0, focal_alpha=0.25):
+    def __init__(self, num_classes, iou_threshold_background, variance, focal_gamma=2.0, focal_alpha=0.25, gpu_train=True):
         super(MultiTaskLossWithFocalLoss, self).__init__()
         self.num_classes = num_classes
         self.threshold_background = iou_threshold_background
         self.variance = variance
         self.focal_gamma = focal_gamma
         self.focal_alpha = focal_alpha
+        self.gpu_train = gpu_train
 
     def forward(self, predictions, priors, targets):
         """
@@ -69,7 +69,7 @@ class MultiTaskLossWithFocalLoss(nn.Module):
             # It then encodes the targets (box offsets and landmark offsets) that the network will learn to predict.
             # Everything is saved in the loc_t, conf_t and landm_t tensors
             match_focal_loss(self.threshold_background, truths, defaults, self.variance, labels, loc_t, conf_t, idx)
-        if GPU:
+        if self.gpu_train:
             loc_t = loc_t.cuda()
             conf_t = conf_t.cuda()
 

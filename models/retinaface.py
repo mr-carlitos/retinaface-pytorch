@@ -3,10 +3,13 @@ import torch.nn as nn
 import torchvision.models._utils as _utils
 import torch.nn.functional as F
 from collections import OrderedDict
+
+from data import NeckMode
 from data.config_transform import transform_layer_config
 from models.net import conv_bn1X1
 from models.net import FPN as FPN
 from models.net import SSH as SSH
+from models.poolingarchitecture import PoolingArchitecture
 
 class ClassHead(nn.Module):
     def __init__(self, inchannels, num_anchors):
@@ -99,8 +102,12 @@ class RetinaFace(nn.Module):
         # out_channels_fpn is 256
         out_channels_fpn = cfg['out_channel']
 
-        if cfg['apply_FPN']:
-            self.fpn = FPN(in_channels_list, out_channels_fpn)
+        if cfg['neck_mode'] == NeckMode.BASELINE_FPN:
+            self.neck = FPN(in_channels_list, out_channels_fpn)
+
+        elif cfg['neck_mode'] == NeckMode.DECONV_POOLING:
+            self.neck = PoolingArchitecture(in_channels_list, out_channels_fpn)
+
         else:
             self.conv1x1list = nn.ModuleList()
             for layer_index in range(len(self.cfg['return_layers'])):
@@ -143,9 +150,9 @@ class RetinaFace(nn.Module):
         else:
             x = self.backbone(x)
 
-        if self.cfg['apply_FPN']:
+        if self.cfg['neck_mode'] != NeckMode.NO_FPN:
             # FPN
-            intermediate = self.fpn(x)
+            intermediate = self.neck(x)
         else:
             intermediate = list()
             j = 0

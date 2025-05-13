@@ -247,7 +247,7 @@ class preproc(object):
         boxes_t[:, 1::2] /= height
 
         labels_t = np.expand_dims(labels_t, 1)
-        #The normalized boxes and landmarks are combined with labels to form the final target tensor.
+        #The normalized boxes are combined with labels to form the final target tensor.
         targets_t = np.hstack((boxes_t, labels_t))
 
         return image_t, targets_t

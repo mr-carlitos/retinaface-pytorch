@@ -14,10 +14,10 @@ from utils.timer import Timer
 
 
 parser = argparse.ArgumentParser(description='Retinaface')
-parser.add_argument('-m', '--trained_model', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-04-16_RetinaFace_baseline_noFPN/RetinaFace_baseline_noFPN_16_04_2025_final.pth',
+parser.add_argument('-m', '--trained_model', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-05-12_RetinaFace_baseline_withFPN_gradientacc/baseline_gradientacc_final.pth',
                     type=str, help='Trained state_dict file path to open')
 parser.add_argument('--origin_size', default=True, type=bool, help='Whether use origin image size to evaluate')
-parser.add_argument('--save_folder', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-04-16_RetinaFace_baseline_noFPN/original/', type=str, help='Dir to save txt results')
+parser.add_argument('--save_folder', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-05-12_RetinaFace_baseline_withFPN_gradientacc/original/', type=str, help='Dir to save txt results')
 parser.add_argument('--cpu', action="store_true", default=False, help='Use cpu inference')
 parser.add_argument('--images_folder', default='/local/scratch/datasets/WiderFace/WIDER_val/images/', type=str, help='image dataset path')
 parser.add_argument('--input_val_txt', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/data/widerface/val/wider_val.txt', type=str, help='val txt path')
@@ -26,7 +26,6 @@ parser.add_argument('--nms_threshold', default=0.4, type=float, help='nms_thresh
 parser.add_argument('--keep_top_k', default=750, type=int, help='keep_top_k')
 parser.add_argument('-s', '--save_image', action="store_true", default=False, help='show detection results')
 parser.add_argument('--vis_thres', default=0.35, type=float, help='visualization_threshold')
-parser.add_argument('--flipping', default=True, type=bool, help='if we do flipping during evaluation pipeline')
 args = parser.parse_args()
 
 
@@ -78,7 +77,7 @@ if __name__ == '__main__':
     print(net)
     #cudnn.benchmark = True
 
-    torch.cuda.set_device(1)
+    torch.cuda.set_device(2)
     device = torch.device("cpu" if args.cpu else "cuda")
     net = net.to(device)
 
