@@ -10,6 +10,7 @@ from models.net import conv_bn1X1
 from models.net import FPN as FPN
 from models.net import SSH as SSH
 from models.poolingarchitecture import PoolingArchitecture
+from models.attentionarchitecture import AttentionArchitecture
 
 class ClassHead(nn.Module):
     def __init__(self, inchannels, num_anchors):
@@ -107,6 +108,9 @@ class RetinaFace(nn.Module):
 
         elif cfg['neck_mode'] == NeckMode.DECONV_POOLING:
             self.neck = PoolingArchitecture(in_channels_list, out_channels_fpn)
+
+        elif cfg['neck_mode'] == NeckMode.CROSSATTENTION_FROMUPPER:
+            self.neck = AttentionArchitecture(in_channels_list, out_channels_fpn)
 
         else:
             self.conv1x1list = nn.ModuleList()

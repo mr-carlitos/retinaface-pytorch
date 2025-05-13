@@ -14,7 +14,7 @@ def deconv_bn_relu(inp, oup, leaky = 0):
         nn.GroupNorm(num_groups, oup),
         nn.LeakyReLU(negative_slope=leaky, inplace=True)
     )
-
+##TODO: Pooling == max pooling?
 class PoolingArchitecture(nn.Module):
     def __init__(self, in_channels_list, out_channels):
         super(PoolingArchitecture,self).__init__()
