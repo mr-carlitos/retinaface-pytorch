@@ -50,50 +50,57 @@ class AttentionArchitecture(nn.Module):
 
         # 2) Perform local cross-attention per level
         for i in range(self.num_levels - 1):
+            # from (batch ,C_in ,H, W) to (B, Nf, d)
             Q = Q_list[i]  # (B, Nf, d)
             K = K_list[i]  # (B, Nc, d)
             V = V_list[i]  # (B, Nc, d)
 
-            B, Nf, d = Q.shape
-            _, Nc, _ = K.shape
+            batch, Number_in_querylayer, d_model = Q.shape
+            _, Number_in_keylayer, _ = K.shape
 
-            Hf, Wf = input[i].shape[2:] # From C2 to C4 -> from 160 × 160 to 40 × 40
-            Hc, Wc = input[i + 1].shape[2:] # From C3 to C5 -> from 80 × 80 to 20 × 20
+            H_querylayer, W_querylayer = input[i].shape[2:] # From C2 to C4 -> from 160 × 160 to 40 × 40
+            H_keylayer, W_keylayer = input[i + 1].shape[2:] # From C3 to C5 -> from 80 × 80 to 20 × 20
             device = Q.device
 
-            #TODO: Continue here
+
 
             # a) compute index groups for 2x2 mapping
-            u_c = torch.arange(Hc, device=device).unsqueeze(1).expand(Hc, Wc).reshape(-1)
-            v_c = torch.arange(Wc, device=device).unsqueeze(0).expand(Hc, Wc).reshape(-1)
-            base = 2 * u_c * Wf + 2 * v_c  # (Nc,)
-            offs = torch.tensor([0, 1, Wf, Wf + 1], device=device)  # 4 offsets
+            u_c = torch.arange(H_keylayer, device=device).unsqueeze(1).expand(H_keylayer, W_keylayer).reshape(-1)
+            v_c = torch.arange(W_keylayer, device=device).unsqueeze(0).expand(H_keylayer, W_keylayer).reshape(-1)
+            base = 2 * u_c * W_querylayer + 2 * v_c  # (Nc,)
+            offs = torch.tensor([0, 1, W_querylayer, W_querylayer + 1], device=device)  # 4 offsets
             idx_q = base.unsqueeze(1) + offs.unsqueeze(0)  # (Nc, 4)
 
             # b) group Q, broadcast K and V to same shape
-            Qg = Q.index_select(1, idx_q.view(-1)).view(B, Nc, 4, d)  # (B, Nc, 4, d)
+            test = idx_q.view(-1)
+            test2 = Q.index_select(1, test)
+            print(test2[0,2])
+            print(test2[0, 1])
+            print(Q[0, 2])
+            print(Q[0, 1])
+            test3 = test2.view(batch, Number_in_keylayer, 4, d_model)
+
+            Qg = Q.index_select(1, idx_q.view(-1)).view(batch, Number_in_keylayer, 4, d_model)  # (B, Nc, 4, d)
             Kg = K.unsqueeze(2).expand(-1, -1, 4, -1)  # (B, Nc, 4, d)
             Vg = V.unsqueeze(2).expand(-1, -1, 4, -1)  # (B, Nc, 4, d)
 
             # c) compute scores and column-wise softmax (over queries)
-            scores = (Qg * Kg).sum(-1) / math.sqrt(d)  # (B, Nc, 4)
+            scores = (Qg * Kg).sum(-1) / math.sqrt(d_model)  # (B, Nc, 4)
             attn = F.softmax(scores, dim=2)  # (B, Nc, 4)
 
             # d) aggregate
             Og = attn.unsqueeze(-1) * Vg  # (B, Nc, 4, d)
 
+            # TODO: Continue here
             # e) scatter back into flat output
-            Og_flat = Og.reshape(B, Nc * 4, d)  # (B, Nf, d) in group-order
+            Og_flat = Og.reshape(batch, Number_in_keylayer * 4, d_model)  # (B, Nf, d) in group-order
             idx_flat = idx_q.reshape(-1)  # (Nf,)
-            out_flat = torch.zeros(B, Nf, d, device=device)
-            out_flat = out_flat.scatter(1, idx_flat.unsqueeze(0).expand(B, -1), Og_flat)
+            out_flat = torch.zeros(batch, Number_in_querylayer, d_model, device=device)
+            out_flat = out_flat.scatter(1, idx_flat.unsqueeze(0).expand(batch, -1), Og_flat)
 
             # f) reshape to spatial map
-            P = out_flat.transpose(1, 2).view(B, d, Hf, Wf)  # (B, d, Hf, Wf)
+            P = out_flat.transpose(1, 2).view(batch, d_model, H_querylayer, W_querylayer)  # (B, d, Hf, Wf)
             outputs.append(P)
 
         return outputs
-
-
-
         #return final_outputs
