@@ -14,7 +14,7 @@ class AttentionArchitecture(nn.Module):
         if (out_channels <= 64):
             leaky = 0.1
 
-        # in_channels_list = [128,256,512,2048]
+        # in_channels_list = [128,256,512,2048,256]
         self.num_levels = len(in_channels_list)
 
         # Linear projections for Q,K,V
@@ -24,9 +24,9 @@ class AttentionArchitecture(nn.Module):
 
 
     def forward(self, input):
-        # input = OrderedDict, 128,256,512,2048
+        # input = OrderedDict, 128,256,512,2048(,256)
         input = list(input.values())
-        # input = List, 128,256,512,2048
+        # input = List, 128,256,512,2048(,256)
 
         outputs = []
 
@@ -62,45 +62,39 @@ class AttentionArchitecture(nn.Module):
             H_keylayer, W_keylayer = input[i + 1].shape[2:] # From C3 to C5 -> from 80 × 80 to 20 × 20
             device = Q.device
 
-
-
             # a) compute index groups for 2x2 mapping
             u_c = torch.arange(H_keylayer, device=device).unsqueeze(1).expand(H_keylayer, W_keylayer).reshape(-1)
             v_c = torch.arange(W_keylayer, device=device).unsqueeze(0).expand(H_keylayer, W_keylayer).reshape(-1)
             base = 2 * u_c * W_querylayer + 2 * v_c  # (Nc,)
+            del u_c, v_c
             offs = torch.tensor([0, 1, W_querylayer, W_querylayer + 1], device=device)  # 4 offsets
-            idx_q = base.unsqueeze(1) + offs.unsqueeze(0)  # (Nc, 4)
+            idx_query = base.unsqueeze(1) + offs.unsqueeze(0)  # (Nc, 4)
+            del base, offs
 
-            # b) group Q, broadcast K and V to same shape
-            test = idx_q.view(-1)
-            test2 = Q.index_select(1, test)
-            print(test2[0,2])
-            print(test2[0, 1])
-            print(Q[0, 2])
-            print(Q[0, 1])
-            test3 = test2.view(batch, Number_in_keylayer, 4, d_model)
+            #torch.set_printoptions(profile="full")
+            #print(idx_query)
 
-            Qg = Q.index_select(1, idx_q.view(-1)).view(batch, Number_in_keylayer, 4, d_model)  # (B, Nc, 4, d)
+            # b) prepare Queries, Keys and Values
+            Qg = Q.index_select(1, idx_query.view(-1)).view(batch, Number_in_keylayer, 4, d_model)  # (B, Nc, 4, d)
             Kg = K.unsqueeze(2).expand(-1, -1, 4, -1)  # (B, Nc, 4, d)
             Vg = V.unsqueeze(2).expand(-1, -1, 4, -1)  # (B, Nc, 4, d)
 
             # c) compute scores and column-wise softmax (over queries)
             scores = (Qg * Kg).sum(-1) / math.sqrt(d_model)  # (B, Nc, 4)
-            attn = F.softmax(scores, dim=2)  # (B, Nc, 4)
+            del Qg, Kg
+            scores = F.softmax(scores, dim=2)  # (B, Nc, 4)
 
             # d) aggregate
-            Og = attn.unsqueeze(-1) * Vg  # (B, Nc, 4, d)
+            output_attentioned = scores.unsqueeze(-1) * Vg  # (B, Nc, 4, d)
+            del Vg, scores
 
-            # TODO: Continue here
-            # e) scatter back into flat output
-            Og_flat = Og.reshape(batch, Number_in_keylayer * 4, d_model)  # (B, Nf, d) in group-order
-            idx_flat = idx_q.reshape(-1)  # (Nf,)
-            out_flat = torch.zeros(batch, Number_in_querylayer, d_model, device=device)
-            out_flat = out_flat.scatter(1, idx_flat.unsqueeze(0).expand(batch, -1), Og_flat)
+            # e) Rearrange output of attention to have correct position
+            output_attentioned = output_attentioned.reshape(batch, Number_in_keylayer * 4, d_model)  # (B, Nf, d) in group-order
+            output_attentioned = output_attentioned[:, idx_query.reshape(-1), :]
+            del idx_query
 
             # f) reshape to spatial map
-            P = out_flat.transpose(1, 2).view(batch, d_model, H_querylayer, W_querylayer)  # (B, d, Hf, Wf)
-            outputs.append(P)
+            output_attentioned = output_attentioned.transpose(1, 2).view(batch, d_model, H_querylayer, W_querylayer) # (B, d, Hf, Wf)
+            outputs.append(output_attentioned)
 
         return outputs
-        #return final_outputs

@@ -110,6 +110,7 @@ class RetinaFace(nn.Module):
             self.neck = PoolingArchitecture(in_channels_list, out_channels_fpn)
 
         elif cfg['neck_mode'] == NeckMode.CROSSATTENTION_FROMUPPER:
+            in_channels_list.append(in_channels_stage)
             self.neck = AttentionArchitecture(in_channels_list, out_channels_fpn)
 
         else:
@@ -126,6 +127,8 @@ class RetinaFace(nn.Module):
 
         self.ClassHead = self._make_class_head(fpn_num=number_of_featuremaps, inchannels=out_channels_fpn, anchor_num=anchor_num)
         self.BboxHead = self._make_bbox_head(fpn_num=number_of_featuremaps, inchannels=out_channels_fpn, anchor_num=anchor_num)
+
+        self.feature_P6 = None
         ##### CARLOS CODE ENDS HERE #######################
 
     def _make_class_head(self, fpn_num, inchannels, anchor_num):
@@ -154,8 +157,15 @@ class RetinaFace(nn.Module):
         else:
             x = self.backbone(x)
 
+        if self.cfg['introduce_P6'] and 3 in self.cfg['return_layers']:
+            #Remember that x is a dict, not a list. So we need to do x[3]
+            self.feature_P6 = self.P6(x[3])
+
         if self.cfg['neck_mode'] != NeckMode.NO_FPN:
-            # FPN
+            # Apply the neck (standard FPN / Pooling Module / Attention Module)
+            if (self.cfg['neck_mode'] == NeckMode.CROSSATTENTION_FROMUPPER) and (self.feature_P6 is not None):
+                x[4] = self.feature_P6
+
             intermediate = self.neck(x)
         else:
             intermediate = list()
@@ -164,10 +174,8 @@ class RetinaFace(nn.Module):
                 intermediate.append(conv1x1(x[j]))
                 j += 1
 
-        if self.cfg['introduce_P6'] and 3 in self.cfg['return_layers']:
-            #Remember that out is a dict, not a list. So we need to do out[3]
-            feature_P6 = self.P6(x[3])
-            intermediate.append(feature_P6)
+        if self.feature_P6 is not None:
+            intermediate.append(self.feature_P6)
 
         # Context Module
         i = 0
@@ -184,6 +192,8 @@ class RetinaFace(nn.Module):
             x = (bbox_regressions, classifications)
         else:
             x = (bbox_regressions, F.softmax(classifications, dim=-1))
+
+        self.feature_P6 = None
         return x
 
     ##### CARLOS CODE STARTS HERE #######################
