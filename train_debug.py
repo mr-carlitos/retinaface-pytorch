@@ -36,7 +36,7 @@ parser.add_argument('--image_size', default=640, type=int, help='Location to sav
 parser.add_argument('--gpu_train', default=True, type=bool, help='Location to save checkpoint models')
 
 args = parser.parse_args()
-torch.cuda.set_device(7)
+torch.cuda.set_device(0)
 
 if not os.path.exists(args.save_folder):
     os.mkdir(args.save_folder)

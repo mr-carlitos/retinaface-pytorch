@@ -23,13 +23,12 @@ def get_args():
     parser = argparse.ArgumentParser(description='Retinaface Training')
     parser.add_argument('--training_dataset', default='./data/widerface/train/label.txt',
                         help='Training dataset directory')
-    parser.add_argument('--network', default='resnet50', help='Backbone resnet50')
     parser.add_argument('--num_workers', default=4, type=int, help='Number of workers used in dataloading')
     parser.add_argument('--lr', '--learning-rate', default=1e-3, type=float, help='initial learning rate')
     parser.add_argument('--momentum', default=0.9, type=float, help='momentum')
     parser.add_argument('--weight_decay', default=5e-4, type=float, help='Weight decay for SGD')
     parser.add_argument('--gamma', default=0.1, type=float, help='Gamma update for SGD')
-    parser.add_argument('--save_folder', default='./save-checkpoints/2025-05-12_RetinaFace_baseline_withFPN_gradientacc/', help='Location to save checkpoint models')
+    parser.add_argument('--save_folder', default='./save-checkpoints/2025-05-20_RetinaFace_DECONV_POOL_gradientacc/', help='Location to save checkpoint models')
 
     parser.add_argument('--batch_size', default=16, type=int, help='Location to save checkpoint models')
     parser.add_argument('--epoch', default=80, type=int, help='Location to save checkpoint models')
@@ -256,7 +255,7 @@ def train(cfg, args):
     )
 
     # Initialize prior boxes
-    priorbox = PriorBox(cfg, image_size=(cfg['image_size'], cfg['image_size']))
+    priorbox = PriorBox(cfg, image_size=(args.image_size, args.image_size))
     with torch.no_grad():
         priors = priorbox.vectorized_forward()
         priors = priors.to(args.device)
@@ -265,18 +264,18 @@ def train(cfg, args):
     if args.rank == 0 or not args.distributed:
         print('Loading dataset...')
     rgb_mean = (104, 117, 124)  # BGR order
-    dataset = WiderFaceDetection(args.training_dataset, preproc(cfg['image_size'], rgb_mean))
+    dataset = WiderFaceDetection(args.training_dataset, preproc(args.image_size, rgb_mean))
 
     # Calculate sizes
-    batch_size = cfg['batch_size']
+    batch_size = args.batch_size
     if args.distributed:
         batch_size = batch_size // args.world_size
 
     epoch_size = len(dataset) // batch_size
-    max_epoch = cfg['epoch']
+    max_epoch = args.epoch
 
     # Learning rate decay points
-    stepvalues = (cfg['decay1'] * epoch_size, cfg['decay2'] * epoch_size)
+    stepvalues = (args.decay1 * epoch_size, args.decay2 * epoch_size)
     step_index = 0
 
     # Start from saved epoch if resuming
