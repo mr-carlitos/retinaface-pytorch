@@ -27,6 +27,32 @@ class AttentionArchitecture(nn.Module):
         input = list(input.values())
         # input = List, 128,256,512,2048(,256)
 
+        orig_sizes = [(f.size(2), f.size(3)) for f in input]
+
+        # Preprocessing: Bottom-up pad/crop so that each query is exactly 2× its next key (Especially necessary at Inference / Evaluation time!)
+        for i in range(self.num_levels - 2, -1, -1):
+            q = input[i]  # e.g. C2, C3, C4, C5 in turn
+            k = input[i + 1]  # the immediately finer map (C3, C4, C5)
+            B, C, Hq, Wq = q.shape
+            _, _, Hk, Wk = k.shape
+
+            Ht, Wt = 2 * Hk, 2 * Wk
+
+            # pad bottom/right if under‐sized
+            pad_h = max(0, Ht - Hq)
+            pad_w = max(0, Wt - Wq)
+            if pad_h or pad_w:
+                # replicate so we don’t introduce zeros
+                q = F.pad(q, (0, pad_w, 0, pad_h), mode='replicate')
+
+            # crop bottom/right if over‐sized
+            crop_h = max(0, q.size(2) - Ht)
+            crop_w = max(0, q.size(3) - Wt)
+            if crop_h or crop_w:
+                q = q[:, :, :Ht, :Wt]
+
+            input[i] = q
+
         outputs = []
 
         # 1) Project Q, K, V for each adjacent pair
@@ -95,5 +121,10 @@ class AttentionArchitecture(nn.Module):
             # f) reshape to spatial map
             output_attentioned = output_attentioned.transpose(1, 2).view(batch, d_model, H_querylayer, W_querylayer) # (B, d, Hf, Wf)
             outputs.append(output_attentioned)
+
+        # cropping back: (Especially necessary at Inference / Evaluation time!)
+        for i, out in enumerate(outputs):
+            H_orig, W_orig = orig_sizes[i]
+            outputs[i] = out[:, :, :H_orig, :W_orig]
 
         return outputs

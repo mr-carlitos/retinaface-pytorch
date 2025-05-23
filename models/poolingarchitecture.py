@@ -14,7 +14,7 @@ def deconv_bn_relu(inp, oup, leaky = 0):
         nn.GroupNorm(num_groups, oup),
         nn.LeakyReLU(negative_slope=leaky, inplace=True)
     )
-##TODO: Pooling == max pooling?
+
 class PoolingArchitecture(nn.Module):
     def __init__(self, in_channels_list, out_channels):
         super(PoolingArchitecture,self).__init__()
@@ -41,7 +41,7 @@ class PoolingArchitecture(nn.Module):
         for _ in range(len(in_channels_list) - 1):
             self.merge_3x3conv_list_thirdpart.append(conv_bn(out_channels, out_channels, leaky=leaky))
 
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.pool = nn.MaxPool2d(kernel_size=2, stride=2, ceil_mode=True)
 
     def forward(self, input):
         # input = OrderedDict, 128,256,512,2048
@@ -61,15 +61,27 @@ class PoolingArchitecture(nn.Module):
 
         for idx in range(1, len(input)):
             if idx == 1:
-                output_variable = last_layer_output
+                x = last_layer_output
             else:
-                output_variable = intermediate_outputs[idx - 2]
+                x = intermediate_outputs[idx - 2]
             # size(2): Height
             # size(3): Width
-            up = self.deconvlist[idx -1](output_variable) # Deconv usage here
-            addition = output_list[idx] + up
-            merged = self.merge_3x3conv_list_secondpart[idx - 1](addition)
-            intermediate_outputs.append(merged)
+            #x = self.deconvlist[idx -1](x, output_size=output_list[idx].shape[2:]) # Deconv usage here
+
+            deconv_block = self.deconvlist[idx - 1]  # this is your nn.Sequential([ConvT, GN, ReLU])
+            target_size = output_list[idx].shape[2:]  # (H, W) of the lateral feature
+
+            # 1) call the ConvTranspose2d with output_size
+            convT = deconv_block[0]  # nn.ConvTranspose2d
+            x = convT(x, output_size=target_size)  # now x.shape == lateral.shape
+
+            # 2) run through the rest of the sequential
+            for m in list(deconv_block.children())[1:]:
+                x = m(x)
+
+            x = output_list[idx] + x
+            x = self.merge_3x3conv_list_secondpart[idx - 1](x)
+            intermediate_outputs.append(x)
         intermediate_outputs = list(reversed(intermediate_outputs))
         intermediate_outputs.append(last_layer_output) # in here, we have the structure [P2, P3, P4, P5]
 
@@ -80,12 +92,12 @@ class PoolingArchitecture(nn.Module):
 
         for idx in range(len(intermediate_outputs)-1):
             if idx == 0:
-                intermediate_variable = first_layer_intermediate
+                x = first_layer_intermediate
             else:
-                intermediate_variable = final_outputs[idx-1]
-            pooled = self.pool(intermediate_variable)
-            pool_applied = intermediate_outputs[idx+1] + pooled
-            merged_final = self.merge_3x3conv_list_thirdpart[idx](pool_applied)
-            final_outputs.append(merged_final)
+                x = final_outputs[idx-1]
+            x = self.pool(x)
+            x = intermediate_outputs[idx+1] + x
+            x = self.merge_3x3conv_list_thirdpart[idx](x)
+            final_outputs.append(x)
         final_outputs = [first_layer_intermediate] + final_outputs
         return final_outputs

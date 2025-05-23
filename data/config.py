@@ -16,8 +16,8 @@ cfg_re50 = {
     'steps': [4, 8, 16, 32, 64],
     # The variance list of parameters is in fact an abuse of terms. Instead it indicates and contains precomputed standard deviations of the landmark and bounding box targets. What the code is doing is some sort of ad-hoc normalization of the targets.
     'variance': [0.1, 0.2],
-    #'neck_mode': NeckMode.CROSSATTENTION_FROMUPPER,
-    'neck_mode': NeckMode.DECONV_POOLING,
+    'neck_mode': NeckMode.CROSSATTENTION_FROMUPPER,
+    #'neck_mode': NeckMode.DECONV_POOLING,
     #For P6 to work, the 'return_layers' attribute must contain '3' in the list.
     'introduce_P6': True,
     #0 == C2, 1== C3, 2 == C4, 3 == C5
