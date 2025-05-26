@@ -28,7 +28,7 @@ def get_args():
     parser.add_argument('--momentum', default=0.9, type=float, help='momentum')
     parser.add_argument('--weight_decay', default=5e-4, type=float, help='Weight decay for SGD')
     parser.add_argument('--gamma', default=0.1, type=float, help='Gamma update for SGD')
-    parser.add_argument('--save_folder', default='./save-checkpoints/2025-05-23_RetinaFace_CROSS_ATT_FROMUPPER_gradientacc/', help='Location to save checkpoint models')
+    parser.add_argument('--save_folder', default='./save-checkpoints/test2/', help='Location to save checkpoint models')
 
     parser.add_argument('--batch_size', default=14, type=int, help='Location to save checkpoint models')
     parser.add_argument('--epoch', default=80, type=int, help='Location to save checkpoint models')
@@ -137,7 +137,7 @@ def get_model(cfg, args):
     # Move model to device and wrap with DDP if distributed
     net = net.to(args.device)
     if args.distributed:
-        net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(net)
+        #net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(net)
         net = DDP(net, device_ids=[args.local_rank], output_device=args.local_rank, find_unused_parameters=True)
     elif torch.cuda.device_count() > 1:
         net = torch.nn.DataParallel(net)

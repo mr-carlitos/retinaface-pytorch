@@ -102,16 +102,34 @@ class RetinaFace(nn.Module):
             raise Exception("Invalid 'backbone-name' parameter in config. No valid backbone!")
         # out_channels_fpn is 256
         out_channels_fpn = cfg['out_channel']
+        self.p6_in_neck = False
 
         if cfg['neck_mode'] == NeckMode.BASELINE_FPN:
             self.neck = FPN(in_channels_list, out_channels_fpn)
 
-        elif cfg['neck_mode'] == NeckMode.DECONV_POOLING:
-            self.neck = PoolingArchitecture(in_channels_list, out_channels_fpn)
+        elif cfg['neck_mode'] == NeckMode.ONLY_DECONV:
+            self.neck = PoolingArchitecture(in_channels_list, out_channels_fpn, NeckMode.ONLY_DECONV)
 
-        elif cfg['neck_mode'] == NeckMode.CROSSATTENTION_FROMUPPER:
+        elif cfg['neck_mode'] == NeckMode.DECONV_POOLING:
+            self.neck = PoolingArchitecture(in_channels_list, out_channels_fpn, NeckMode.DECONV_POOLING)
+
+        elif cfg['neck_mode'] == NeckMode.NEIGHBOURHOOD_DECONV_POOLING:
+            self.neck = PoolingArchitecture(in_channels_list, out_channels_fpn, NeckMode.NEIGHBOURHOOD_DECONV_POOLING)
+
+        elif cfg['neck_mode'] == NeckMode.CROSSATTENTION_FROMUPPER_PYRAMIDIAL:
             in_channels_list.append(in_channels_stage)
-            self.neck = AttentionArchitecture(in_channels_list, out_channels_fpn)
+            self.p6_in_neck = True
+            self.neck = AttentionArchitecture(in_channels_list, out_channels_fpn, NeckMode.CROSSATTENTION_FROMUPPER_PYRAMIDIAL)
+
+        elif cfg['neck_mode'] == NeckMode.CROSSATTENTION_FROMUPPER_HORIZONTAL:
+            in_channels_list.append(in_channels_stage)
+            self.p6_in_neck = True
+            self.neck = AttentionArchitecture(in_channels_list, out_channels_fpn, NeckMode.CROSSATTENTION_FROMUPPER_HORIZONTAL)
+
+        elif cfg['neck_mode'] == NeckMode.CROSSATTENTION_FROMUPPERANDLOWER_HORIZONTAL:
+            in_channels_list.append(in_channels_stage)
+            self.p6_in_neck = True
+            self.neck = AttentionArchitecture(in_channels_list, out_channels_fpn, NeckMode.CROSSATTENTION_FROMUPPERANDLOWER_HORIZONTAL)
 
         else:
             self.conv1x1list = nn.ModuleList()
@@ -163,7 +181,7 @@ class RetinaFace(nn.Module):
 
         if self.cfg['neck_mode'] != NeckMode.NO_FPN:
             # Apply the neck (standard FPN / Pooling Module / Attention Module)
-            if (self.cfg['neck_mode'] == NeckMode.CROSSATTENTION_FROMUPPER) and (self.feature_P6 is not None):
+            if self.p6_in_neck and (self.feature_P6 is not None):
                 x[4] = self.feature_P6
 
             intermediate = self.neck(x)

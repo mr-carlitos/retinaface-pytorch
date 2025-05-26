@@ -19,7 +19,7 @@ from utils.box_utils import decode, clip_boxes
 
 parser = argparse.ArgumentParser(description='Retinaface')
 
-parser.add_argument('-m', '--trained_model', default='./weights/RetinaFace_baseline_retrained_withFPN_14_04_2025_final.pth',
+parser.add_argument('-m', '--trained_model', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-05-25_RetinaFace_CROSS_ATT_FROMUPPER_PARALLEL_gradientacc/CROSSATTENTION_FROMUPPER_PARALLEL_gradientacc_final.pth',
                     type=str, help='Trained state_dict file path to open')
 parser.add_argument('--cpu', action="store_true", default=False, help='Use cpu inference')
 parser.add_argument('--confidence_threshold', default=0.02, type=float, help='confidence_threshold')
@@ -81,7 +81,7 @@ if __name__ == '__main__':
     print(net)
     cudnn.benchmark = False
 
-    torch.cuda.set_device(3)
+    torch.cuda.set_device(0)
     device = torch.device("cpu" if args.cpu else "cuda")
     net = net.to(device)
 
@@ -93,9 +93,9 @@ if __name__ == '__main__':
     do_flip = args.flipping  # Enable horizontal flip.
     max_size = 2150  # Maximum allowed size for the longer side.
 
-    #image_name = "7_Cheering_Cheering_7_50.jpg"
-    image_name = "0_Parade_marchingband_1_379.jpg"
-    image_path = "./example-pictures/input/"+image_name
+    #image_name = "7_Cheering_Cheering_7_50"
+    image_name = "0_Parade_marchingband_1_379"
+    image_path = "./example-pictures/input/"+image_name+".jpg"
     img_raw = cv2.imread(image_path, cv2.IMREAD_COLOR)
 
     original_width = img_raw.shape[1]

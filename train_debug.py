@@ -5,7 +5,6 @@ from __future__ import print_function
 import os
 import torch
 import torch.optim as optim
-import torch.backends.cudnn as cudnn
 import argparse
 import torch.utils.data as data
 from data import WiderFaceDetection, detection_collate, preproc, cfg_re50
@@ -36,7 +35,7 @@ parser.add_argument('--image_size', default=640, type=int, help='Location to sav
 parser.add_argument('--gpu_train', default=True, type=bool, help='Location to save checkpoint models')
 
 args = parser.parse_args()
-torch.cuda.set_device(0)
+torch.cuda.set_device(6)
 
 if not os.path.exists(args.save_folder):
     os.mkdir(args.save_folder)

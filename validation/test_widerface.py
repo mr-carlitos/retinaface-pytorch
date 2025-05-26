@@ -14,10 +14,10 @@ from utils.timer import Timer
 
 
 parser = argparse.ArgumentParser(description='Retinaface')
-parser.add_argument('-m', '--trained_model', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-05-12_RetinaFace_baseline_withFPN_gradientacc/baseline_gradientacc_final.pth',
+parser.add_argument('-m', '--trained_model', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-05-23_RetinaFace_CROSS_ATT_FROMUPPER_gradientacc/CROSSATTENTION_FROMUPPER_gradientacc_final.pth',
                     type=str, help='Trained state_dict file path to open')
+parser.add_argument('--save_folder', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-05-23_RetinaFace_CROSS_ATT_FROMUPPER_gradientacc/original/', type=str, help='Dir to save txt results')
 parser.add_argument('--origin_size', default=True, type=bool, help='Whether use origin image size to evaluate')
-parser.add_argument('--save_folder', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-05-12_RetinaFace_baseline_withFPN_gradientacc/original/', type=str, help='Dir to save txt results')
 parser.add_argument('--cpu', action="store_true", default=False, help='Use cpu inference')
 parser.add_argument('--images_folder', default='/local/scratch/datasets/WiderFace/WIDER_val/images/', type=str, help='image dataset path')
 parser.add_argument('--input_val_txt', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/data/widerface/val/wider_val.txt', type=str, help='val txt path')
@@ -77,7 +77,7 @@ if __name__ == '__main__':
     print(net)
     #cudnn.benchmark = True
 
-    torch.cuda.set_device(2)
+    torch.cuda.set_device(3)
     device = torch.device("cpu" if args.cpu else "cuda")
     net = net.to(device)
 
@@ -153,6 +153,8 @@ if __name__ == '__main__':
         dets = np.hstack((boxes, scores[:, np.newaxis])).astype(np.float32, copy=False)
         keep = py_cpu_nms(dets, args.nms_threshold)
         dets = dets[keep, :]
+        #TODO: Necessary??
+        dets = dets[:args.keep_top_k, :]
 
         _t['misc'].toc()
 
