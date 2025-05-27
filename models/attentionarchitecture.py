@@ -43,6 +43,8 @@ class AttentionArchitecture(nn.Module):
             raise Exception("illegal (coming from Attention constructor)")
 
     def forward(self, input):
+        #torch.set_printoptions(profile="full")
+
         if self.mode == NeckMode.CROSSATTENTION_FROMUPPER_PYRAMIDIAL:
             return self.forward_onlyupper_pyramidial(input)
         elif self.mode == NeckMode.CROSSATTENTION_FROMUPPERANDLOWER_HORIZONTAL:
@@ -234,9 +236,6 @@ class AttentionArchitecture(nn.Module):
             offs = torch.tensor([0, 1, W_querylayer, W_querylayer + 1], device=device)  # 4 offsets
             idx_query = base.unsqueeze(1) + offs.unsqueeze(0)  # (Nc, 4)
 
-            #torch.set_printoptions(profile="full")
-            #print(idx_query)
-
             # b) prepare Queries, Keys and Values
             Qg = Q.index_select(1, idx_query.view(-1)).view(batch, Number_in_keylayer, 4, d_model)  # (B, Nc, 4, d)
             Kg = K.unsqueeze(2).expand(-1, -1, 4, -1)  # (B, Nc, 4, d)
@@ -304,68 +303,81 @@ class AttentionArchitecture(nn.Module):
         outputs = []
 
         # 1) Project Q, K, V for each adjacent pair
-        Q_list, K_list, V_list = [], [], []
+        Q_list, K_list_upper, V_list_upper, K_list_lower, V_list_lower = [], [], [], [], []
 
         for i in range(self.num_levels-1):
             q_flat = input[i].flatten(2).transpose(1, 2)  # (B, Nf, Cin_q)
             Q_list.append(self.q_projs[i](q_flat))  # (B, Nf, d)
 
             kv_flat_upper = input[i+1].flatten(2).transpose(1, 2)
-            k_flat = self.k_projs_upper[i](kv_flat_upper)
-            v_flat = self.v_projs_upper[i](kv_flat_upper)
+            K_list_upper.append(self.k_projs_upper[i](kv_flat_upper))
+            V_list_upper.append(self.v_projs_upper[i](kv_flat_upper))
             if i > 0:
                 kv_flat_lower = input[i-1].flatten(2).transpose(1, 2)
-                k_flat_lower = self.k_projs_lower[i-1](kv_flat_lower)
-                v_flat_lower = self.v_projs_lower[i-1](kv_flat_lower)
+                K_list_lower.append(self.k_projs_lower[i-1](kv_flat_lower))
+                V_list_lower.append(self.v_projs_lower[i-1](kv_flat_lower))
 
-                k_flat = torch.cat((k_flat,k_flat_lower),1)
-                v_flat = torch.cat((v_flat, v_flat_lower), 1)
-
-            K_list.append(k_flat)  # (B, Nc, d)
-            V_list.append(v_flat)  # (B, Nc, d)
-
-        #TODO: Continue here with einsum or matmul
         # 2) Perform local cross-attention per level
         for i in range(self.num_levels - 1):
             # from (batch ,C_in ,H, W) to (B, Nf, d)
             Q = Q_list[i]  # (B, Nf, d)
-            K = K_list[i]  # (B, Nc, d)
-            V = V_list[i]  # (B, Nc, d)
+            K_upper = K_list_upper[i]  # (B, Nc, d)
+            V_upper = V_list_upper[i]  # (B, Nc, d)
 
             batch, Number_in_querylayer, d_model = Q.shape
-            _, Number_in_keylayer, _ = K.shape
+            _, Number_in_upper_keylayer, _ = K_upper.shape
 
             H_querylayer, W_querylayer = input[i].shape[2:] # From C2 to C4 -> from 160 × 160 to 40 × 40
             H_upper_keylayer, W_upper_keylayer = input[i + 1].shape[2:] # From C3 to C5 -> from 80 × 80 to 20 × 20
             device = Q.device
 
             # a) compute index groups for 2x2 mapping
-            u_c = torch.arange(H_upper_keylayer, device=device).unsqueeze(1).expand(H_upper_keylayer, W_upper_keylayer).reshape(-1)
-            v_c = torch.arange(W_upper_keylayer, device=device).unsqueeze(0).expand(H_upper_keylayer, W_upper_keylayer).reshape(-1)
-            base = 2 * u_c * W_querylayer + 2 * v_c  # (Nc,)
+            u = torch.arange(H_upper_keylayer, device=device).unsqueeze(1).expand(H_upper_keylayer, W_upper_keylayer).reshape(-1)
+            v = torch.arange(W_upper_keylayer, device=device).unsqueeze(0).expand(H_upper_keylayer, W_upper_keylayer).reshape(-1)
+            base = 2 * u * W_querylayer + 2 * v  # (Nc,)
 
             offs = torch.tensor([0, 1, W_querylayer, W_querylayer + 1], device=device)  # 4 offsets
             idx_query = base.unsqueeze(1) + offs.unsqueeze(0)  # (Nc, 4)
-
-            #torch.set_printoptions(profile="full")
             #print(idx_query)
 
             # b) prepare Queries, Keys and Values
-            Qg = Q.index_select(1, idx_query.view(-1)).view(batch, Number_in_keylayer, 4, d_model)  # (B, Nc, 4, d)
+            Q_grouped = Q.index_select(1, idx_query.view(-1)).view(batch, Number_in_upper_keylayer, 4, d_model)  # (B, Nc, 4, d)
 
-            Kg = K.unsqueeze(2).expand(-1, -1, 4, -1)  # (B, Nc, 4, d)
-            Vg = V.unsqueeze(2).expand(-1, -1, 4, -1)  # (B, Nc, 4, d)
+            K_grouped = K_upper.unsqueeze(2)
+            V_grouped = V_upper.unsqueeze(2)
+
+            K_lower_grouped = None
+            V_lower_grouped = None
+
+            #Keys/Values from lower layer need their own grouping -> hence also their own index vector
+            if i > 0:
+                H_lower, W_lower = input[i-1].shape[2:]
+                base_lo = (4 * u) * W_lower + (4 * v)
+                offs_l = torch.tensor(
+                    [ii + jj*W_lower for jj in range(4) for ii in range(4)],
+                    device=device
+                )
+                idx_lo = (base_lo.unsqueeze(1) + offs_l).reshape(-1)  # (Nc*4*4,)
+                print(idx_lo)
+
+                # gather 16 lower keys per coarse cell
+                K_lower_grouped = K_list_lower[i-1].index_select(1, idx_lo).view(batch, Number_in_upper_keylayer, 16, d_model)
+                V_lower_grouped = V_list_lower[i-1].index_select(1, idx_lo).view(batch, Number_in_upper_keylayer, 16, d_model)
+
+            if K_lower_grouped is not None:
+                K_grouped = torch.cat([K_grouped, K_lower_grouped], dim = 2)
+                V_grouped = torch.cat([V_grouped, V_lower_grouped], dim = 2)
 
             # c) compute scores and column-wise softmax (over queries)
-            scores = (Qg * Kg).sum(-1) / math.sqrt(d_model)  # (B, Nc, 4)
-
-            scores = F.softmax(scores, dim=2)  # (B, Nc, 4)
-
-            # d) aggregate
-            output_attentioned = scores.unsqueeze(-1) * Vg  # (B, Nc, 4, d)
+            scores = torch.einsum('bnmd,bnkd->bnmk', Q_grouped, K_grouped) / math.sqrt(d_model)
+            if K_lower_grouped is not None:
+                attn = F.softmax(scores, dim=3)
+            else:
+                attn = F.softmax(scores, dim=2)
+            output_attentioned = torch.einsum('bnmk,bnkd->bnmd', attn, V_grouped)
 
             # e) Rearrange output of attention to have correct position
-            output_attentioned = output_attentioned.reshape(batch, Number_in_keylayer * 4, d_model)  # (B, Nf, d) in group-order
+            output_attentioned = output_attentioned.reshape(batch, Number_in_upper_keylayer * 4, d_model)  # (B, Nf, d) in group-order
 
             # Create inverse mapping
             scatter_idx = torch.empty_like(idx_query.view(-1))
