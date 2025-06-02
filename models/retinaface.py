@@ -103,6 +103,7 @@ class RetinaFace(nn.Module):
         # out_channels_fpn is 256
         out_channels_fpn = cfg['out_channel']
         self.p6_in_neck = False
+        self.position_awareness = cfg['position_awareness']
 
         if cfg['neck_mode'] == NeckMode.BASELINE_FPN:
             self.neck = FPN(in_channels_list, out_channels_fpn)
@@ -119,17 +120,22 @@ class RetinaFace(nn.Module):
         elif cfg['neck_mode'] == NeckMode.CROSSATTENTION_FROMUPPER_PYRAMIDIAL:
             in_channels_list.append(in_channels_stage)
             self.p6_in_neck = True
-            self.neck = AttentionArchitecture(in_channels_list, out_channels_fpn, NeckMode.CROSSATTENTION_FROMUPPER_PYRAMIDIAL)
+            self.neck = AttentionArchitecture(in_channels_list, out_channels_fpn, NeckMode.CROSSATTENTION_FROMUPPER_PYRAMIDIAL, self.phase, self.position_awareness)
+
+        elif cfg['neck_mode'] == NeckMode.CROSSATTENTION_FROMUPPERANDLOWER_PYRAMIDIAL:
+            in_channels_list.append(in_channels_stage)
+            self.p6_in_neck = True
+            self.neck = AttentionArchitecture(in_channels_list, out_channels_fpn, NeckMode.CROSSATTENTION_FROMUPPERANDLOWER_PYRAMIDIAL, self.phase, self.position_awareness)
 
         elif cfg['neck_mode'] == NeckMode.CROSSATTENTION_FROMUPPER_HORIZONTAL:
             in_channels_list.append(in_channels_stage)
             self.p6_in_neck = True
-            self.neck = AttentionArchitecture(in_channels_list, out_channels_fpn, NeckMode.CROSSATTENTION_FROMUPPER_HORIZONTAL)
+            self.neck = AttentionArchitecture(in_channels_list, out_channels_fpn, NeckMode.CROSSATTENTION_FROMUPPER_HORIZONTAL, self.phase, self.position_awareness)
 
         elif cfg['neck_mode'] == NeckMode.CROSSATTENTION_FROMUPPERANDLOWER_HORIZONTAL:
             in_channels_list.append(in_channels_stage)
             self.p6_in_neck = True
-            self.neck = AttentionArchitecture(in_channels_list, out_channels_fpn, NeckMode.CROSSATTENTION_FROMUPPERANDLOWER_HORIZONTAL)
+            self.neck = AttentionArchitecture(in_channels_list, out_channels_fpn, NeckMode.CROSSATTENTION_FROMUPPERANDLOWER_HORIZONTAL, self.phase, self.position_awareness)
 
         else:
             self.conv1x1list = nn.ModuleList()

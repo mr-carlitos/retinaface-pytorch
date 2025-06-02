@@ -21,7 +21,7 @@ from utils.nms.py_cpu_nms import py_cpu_nms
 
 parser = argparse.ArgumentParser(description='Retinaface')
 
-parser.add_argument('-m', '--trained_model', default='./weights/RetinaFace_baseline_retrained_withFPN_14_04_2025_final.pth',
+parser.add_argument('-m', '--trained_model', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-05-28_CROSSATTENTION_FROMUPPERANDLOWER_PYRAMIDIAL/CROSSATTENTION_FROMUPPERANDLOWER_PYRAMIDIAL_final.pth',
                     type=str, help='Trained state_dict file path to open')
 parser.add_argument('--cpu', action="store_true", default=False, help='Use cpu inference')
 parser.add_argument('--confidence_threshold', default=0.02, type=float, help='confidence_threshold')
@@ -96,8 +96,8 @@ if __name__ == '__main__':
     do_flip = args.flipping  # Enable horizontal flip.
     max_size = 2150  # Maximum allowed size for the longer side.
 
-    #image_name = "7_Cheering_Cheering_7_50.jpg"
-    image_name = "0_Parade_marchingband_1_379.jpg"
+    image_name = "7_Cheering_Cheering_7_50.jpg"
+    #image_name = "0_Parade_marchingband_1_379.jpg"
 
     image_path = "./example-pictures/input/"+image_name
     img_raw = cv2.imread(image_path, cv2.IMREAD_COLOR)

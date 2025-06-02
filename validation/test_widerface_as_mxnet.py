@@ -20,9 +20,9 @@ from utils.timer import Timer
 
 
 parser = argparse.ArgumentParser(description='Retinaface')
-parser.add_argument('-m', '--trained_model', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-05-25_RetinaFace_CROSS_ATT_FROMUPPER_PARALLEL_gradientacc/CROSSATTENTION_FROMUPPER_PARALLEL_gradientacc_final.pth',
+parser.add_argument('-m', '--trained_model', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-06-01_CROSSATTENTION_FROMUPPERANDLOWER_PYRAMIDIAL/CROSSATTENTION_FROMUPPERANDLOWER_PYRAMIDIAL_final.pth',
                     type=str, help='Trained state_dict file path to open')
-parser.add_argument('--save_folder', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-05-25_RetinaFace_CROSS_ATT_FROMUPPER_PARALLEL_gradientacc/like-mxnet/', type=str, help='Dir to save txt results')
+parser.add_argument('--save_folder', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-06-01_CROSSATTENTION_FROMUPPERANDLOWER_PYRAMIDIAL/like-mxnet/', type=str, help='Dir to save txt results')
 parser.add_argument('--origin_size', default=False, type=bool, help='Whether use origin image size to evaluate')
 parser.add_argument('--cpu', action="store_true", default=False, help='Use cpu inference')
 parser.add_argument('--images_folder', default='/local/scratch/datasets/WiderFace/WIDER_val/images/', type=str, help='image dataset path')
@@ -84,7 +84,7 @@ if __name__ == '__main__':
     print(net)
     cudnn.benchmark = False
 
-    torch.cuda.set_device(6)
+    torch.cuda.set_device(1)
     device = torch.device("cpu" if args.cpu else "cuda")
     net = net.to(device)
 
