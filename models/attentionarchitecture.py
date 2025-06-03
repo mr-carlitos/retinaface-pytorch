@@ -5,18 +5,22 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 from data import NeckMode
+from models.net import conv_bn1X1
 
 class AttentionArchitecture(nn.Module):
-    def __init__(self, in_channels_list, out_channels, mode, phase, position_awareness, residualconn = False, layernorm = False, feedforward = False, ):
+    def __init__(self, in_channels_list, out_channels, mode, phase, position_awareness, residualconn = True, groupnorm = True):
         super(AttentionArchitecture,self).__init__()
+        leaky = 0
+        if (out_channels <= 64):
+            leaky = 0.1
+
         d_model = out_channels
         self.mode = mode
         self.phase = phase
         self.position_awareness = position_awareness
 
         self.residualconn = residualconn
-        self.layernorm = layernorm
-        self.feedforward = feedforward
+        self.groupnorm = groupnorm
 
         # in_channels_list = [128,256,512,2048,256] -> Which are C2, C3, C4, C5, and C6/P6
         self.num_levels = len(in_channels_list)
@@ -66,11 +70,27 @@ class AttentionArchitecture(nn.Module):
                     for _ in range(self.num_levels - 1)
                 ])
 
+        if residualconn:
+            self.convlist1x1 = nn.ModuleList()
+            for in_channel in in_channels_list[:-1]:
+                self.convlist1x1.append(conv_bn1X1(in_channel, out_channels, stride=1, leaky=leaky))
+
+        if groupnorm:
+            self.groupnormlist = nn.ModuleList()
+            num_groups = max(1, out_channels // 32)  # For GroupNorm
+            for _ in in_channels_list[:-1]:
+                self.groupnormlist.append(nn.GroupNorm(num_groups, out_channels))
+
 
     def forward(self, x):
         #torch.set_printoptions(profile="full")
 
         x, orig_sizes = self.preprocessing(x)
+
+        if self.residualconn:
+            convoluted_list = []
+            for idx, x_entry in enumerate(x[:-1]):
+                convoluted_list.append(self.convlist1x1[idx](x_entry))
 
         if self.mode == NeckMode.CROSSATTENTION_FROMUPPER_PYRAMIDIAL:
             neck_computation = self.forward_onlyupper_pyramidial(x)
@@ -85,6 +105,14 @@ class AttentionArchitecture(nn.Module):
             neck_computation = self.forward_onlyupper_horizontal(x)
         else:
             raise Exception("illegal (coming from Attention forward)")
+
+        if self.residualconn:
+            for idx, neck_entry in enumerate(neck_computation):
+                neck_computation[idx] = neck_computation[idx] + convoluted_list[idx]
+
+        if self.groupnorm:
+            for idx, neck_entry in enumerate(neck_computation):
+                neck_computation[idx] = self.groupnormlist[idx](neck_entry)
 
         if self.phase == 'train':
             return neck_computation
