@@ -14,6 +14,8 @@ class AttentionArchitecture(nn.Module):
         if (out_channels <= 64):
             leaky = 0.1
 
+            #
+            
         d_model = out_channels
         self.mode = mode
         self.phase = phase
