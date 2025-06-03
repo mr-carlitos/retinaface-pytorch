@@ -19,7 +19,7 @@ from utils.box_utils import decode, clip_boxes
 
 parser = argparse.ArgumentParser(description='Retinaface')
 
-parser.add_argument('-m', '--trained_model', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-06-01_CROSSATTENTION_FROMUPPERANDLOWER_PYRAMIDIAL/CROSSATTENTION_FROMUPPERANDLOWER_PYRAMIDIAL_final.pth',
+parser.add_argument('-m', '--trained_model', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-06-02_CROSSATTENTION_FROMUPPERANDLOWER_PYRAMIDIAL_POSITIONALENC/CROSSATTENTION_FROMUPPERANDLOWER_PYRAMIDIAL_final.pth',
                     type=str, help='Trained state_dict file path to open')
 parser.add_argument('--cpu', action="store_true", default=False, help='Use cpu inference')
 parser.add_argument('--confidence_threshold', default=0.02, type=float, help='confidence_threshold')
@@ -81,7 +81,7 @@ if __name__ == '__main__':
     print(net)
     cudnn.benchmark = False
 
-    torch.cuda.set_device(1)
+    torch.cuda.set_device(6)
     device = torch.device("cpu" if args.cpu else "cuda")
     net = net.to(device)
 

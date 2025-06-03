@@ -7,23 +7,24 @@ import math
 from data import NeckMode
 
 class AttentionArchitecture(nn.Module):
-    def __init__(self, in_channels_list, out_channels, mode, phase, position_awareness):
+    def __init__(self, in_channels_list, out_channels, mode, phase, position_awareness, residualconn = False, layernorm = False, feedforward = False, ):
         super(AttentionArchitecture,self).__init__()
-        leaky = 0
-        if (out_channels <= 64):
-            leaky = 0.1
-
-        d_model = 256
+        d_model = out_channels
         self.mode = mode
         self.phase = phase
         self.position_awareness = position_awareness
 
-        # in_channels_list = [128,256,512,2048,256]
+        self.residualconn = residualconn
+        self.layernorm = layernorm
+        self.feedforward = feedforward
+
+        # in_channels_list = [128,256,512,2048,256] -> Which are C2, C3, C4, C5, and C6/P6
         self.num_levels = len(in_channels_list)
 
         # Linear projections for Q,K,V
         self.q_projs = nn.ModuleList([nn.Linear(in_ch, d_model) for in_ch in in_channels_list[:-1]])
 
+        #PYRAMIDIAL -> First set of queries depends on C5, while the rest depends on the calculated (reused) intermediate feature maps, which per definition have channels = 256
         if mode == NeckMode.CROSSATTENTION_FROMUPPER_PYRAMIDIAL or mode == NeckMode.CROSSATTENTION_FROMUPPERANDLOWER_PYRAMIDIAL:
             self.k_projs_upper = nn.ModuleList()
             self.v_projs_upper = nn.ModuleList()
@@ -34,7 +35,7 @@ class AttentionArchitecture(nn.Module):
             for step in range(len(in_channels_list)-2):
                 self.k_projs_upper.append(nn.Linear(d_model, d_model))
                 self.v_projs_upper.append(nn.Linear(d_model, d_model))
-
+        #HORIZONTAL -> All sets of queries depend on the ResNet backbone, and hence, each feature map has a different channel size
         elif mode == NeckMode.CROSSATTENTION_FROMUPPERANDLOWER_HORIZONTAL or mode == NeckMode.CROSSATTENTION_FROMUPPER_HORIZONTAL:
             self.k_projs_upper = nn.ModuleList([nn.Linear(in_ch, d_model) for in_ch in in_channels_list[1:]])
             self.v_projs_upper = nn.ModuleList([nn.Linear(in_ch, d_model) for in_ch in in_channels_list[1:]])
@@ -42,10 +43,12 @@ class AttentionArchitecture(nn.Module):
         else:
             raise Exception("NeckMode is not set to a CROSSATTENTION mode (coming from Attention constructor)")
 
+        #Own set of linear projections for the LOWER feature maps
         if mode == NeckMode.CROSSATTENTION_FROMUPPERANDLOWER_HORIZONTAL or mode == NeckMode.CROSSATTENTION_FROMUPPERANDLOWER_PYRAMIDIAL:
             self.k_projs_lower = nn.ModuleList([nn.Linear(in_ch, d_model) for in_ch in in_channels_list[:-2]])
             self.v_projs_lower = nn.ModuleList([nn.Linear(in_ch, d_model) for in_ch in in_channels_list[:-2]])
 
+        #Learn positional embedding while training
         if self.position_awareness:
             if mode == NeckMode.CROSSATTENTION_FROMUPPERANDLOWER_HORIZONTAL or mode == NeckMode.CROSSATTENTION_FROMUPPERANDLOWER_PYRAMIDIAL:
                 # For layers that only have upper keys (the highest level)
@@ -122,7 +125,7 @@ class AttentionArchitecture(nn.Module):
 
     def reshape_attentioned(self, output_attentioned, batch, Number_in_keylayer, H_querylayer, W_querylayer, d_model, device, idx_query):
         # Rearrange output of attention to have correct position
-        output_attentioned = output_attentioned.reshape(batch, Number_in_keylayer * 4, d_model)  # (B, Nf, d) in group-order
+        output_attentioned = output_attentioned.reshape(batch, Number_in_keylayer * 4, d_model)  # (B, N, d_model) in group-order
 
         # Create inverse mapping
         scatter_idx = torch.empty_like(idx_query.view(-1))
@@ -130,7 +133,7 @@ class AttentionArchitecture(nn.Module):
         output_attentioned = output_attentioned[:, scatter_idx, :]
 
         # reshape to spatial map
-        output_attentioned = output_attentioned.transpose(1, 2).view(batch, d_model, H_querylayer, W_querylayer)  # (B, d, Hf, Wf)
+        output_attentioned = output_attentioned.transpose(1, 2).view(batch, d_model, H_querylayer, W_querylayer)  # (B, d_model, Hf, Wf)
         return output_attentioned
 
     def crop_back(self, outputs, orig_sizes):
@@ -149,10 +152,7 @@ class AttentionArchitecture(nn.Module):
         offs = torch.tensor([0, 1, W_querylayer, W_querylayer + 1], device=device)  # 4 offsets
         idx_query = base.unsqueeze(1) + offs.unsqueeze(0)  # (Nc, 4)
 
-        # torch.set_printoptions(profile="full")
-        # print(idx_query)
-
-        # prepare Queries, Keys and Values
+        # prepare Queries via index_select()
         Q_grouped = Q.index_select(1, idx_query.view(-1)).view(batch, Number_in_keylayer, 4, d_model)  # (B, Nc, 4, d)
         return Q_grouped, idx_query, u_c, v_c
 
@@ -161,7 +161,7 @@ class AttentionArchitecture(nn.Module):
     def forward_onlyupper_pyramidial(self, x):
         outputs = []
 
-        # 1) Project Q, K, V for each adjacent pair
+        # 1) Project Q for each level, K and V can only be calculated from the highest level for now
         Q_list = []
 
         kv_flat = x[-1].flatten(2).transpose(1, 2)  # (B, Nc, Cin_kv)
@@ -197,15 +197,15 @@ class AttentionArchitecture(nn.Module):
             H_keylayer, W_keylayer = x[i + 1].shape[2:] # From C3 to C5 -> from 80 × 80 to 20 × 20
             device = Q.device
 
-            Qg,idx_query,_,_ = self.prepare_queries(Q, device, H_keylayer, W_keylayer, W_querylayer, batch, Number_in_keylayer, d_model)
+            Q_grouped,idx_query,_,_ = self.prepare_queries(Q, device, H_keylayer, W_keylayer, W_querylayer, batch, Number_in_keylayer, d_model)
 
             Kg = K.unsqueeze(2).expand(-1, -1, 4, -1)  # (B, Nc, 4, d)
             Vg = V.unsqueeze(2).expand(-1, -1, 4, -1)  # (B, Nc, 4, d)
 
             # c) compute scores and column-wise softmax (over queries)
-            scores = (Qg * Kg).sum(-1) / math.sqrt(d_model)  # (B, Nc, 4)
+            scores = (Q_grouped * Kg).sum(-1) / math.sqrt(d_model)  # (B, Nc, 4)
             if self.position_awareness:
-                scores = scores + self.pos_bias_onlyupper[i].view(1, 1, 1, -1)
+                scores = scores + self.pos_bias_onlyupper[i].view(1, 1, -1)
             scores = F.softmax(scores, dim=2)  # (B, Nc, 4)
 
             # d) aggregate
@@ -222,7 +222,7 @@ class AttentionArchitecture(nn.Module):
     def forward_upperandlower_pyramidial(self, x):
         outputs = []
 
-        # 1) Project Q, K, V for each adjacent pair
+        # 1) Project Q, K_lower, V_lower for each level, K_upper and V_upper can only be calculated from the highest level for now
         Q_list, K_list_lower, V_list_lower = [], [], []
 
         kv_flat = x[-1].flatten(2).transpose(1, 2)  # (B, Nc, Cin_kv)
@@ -239,8 +239,8 @@ class AttentionArchitecture(nn.Module):
                 V_list_lower.append(self.v_projs_lower[i-1](kv_flat_lower))
 
         for i in range(self.num_levels - 2, -1, -1):
-            # from (batch ,C_in ,H, W) to (B, Nf, d)
-            Q = Q_list[i]  # (B, Nf, d)
+            # from (batch ,C_in ,H, W) to (B, Nf, d_model)
+            Q = Q_list[i]  # (B, Nf, d_model)
 
             if i == self.num_levels - 2:
                 K_upper = K_highestlevel
@@ -271,19 +271,11 @@ class AttentionArchitecture(nn.Module):
             if i > 0:
                 H_lower, W_lower = x[i - 1].shape[2:]
                 base_lo = (4 * u) * W_lower + (4 * v)
-                #torch.set_printoptions(profile="full")
-                #print(base_lo)
                 offs_l = torch.tensor(
                     [ii + jj*W_lower for jj in range(4) for ii in range(4)],
                     device=device
                 )
-                idx_lo = (base_lo.unsqueeze(1) + offs_l).reshape(-1)  # (Nc*4*4,)
-                #print(idx_lo)
-
-                # The following commented out lines can show that idx_lo contains all index values exactly once, which is what we need
-                #sorted_tensor = torch.sort(idx_lo)[0]
-                #expected = torch.arange(25600, dtype=idx_lo.dtype, device=idx_lo.device)
-                #print(torch.equal(sorted_tensor, expected))
+                idx_lo = (base_lo.unsqueeze(1) + offs_l).reshape(-1)
 
                 # gather 16 lower keys per coarse cell
                 K_lower_grouped = K_list_lower[i-1].index_select(1, idx_lo).view(batch, Number_in_upper_keylayer, 16, d_model)
@@ -299,7 +291,7 @@ class AttentionArchitecture(nn.Module):
                 attn = F.softmax(scores, dim=3)
             else:
                 if self.position_awareness:
-                    scores = scores + self.pos_bias_onlyupper.view(1, 1, 1, -1)
+                    scores = scores + self.pos_bias_onlyupper.view(1, 1, -1, 1)
                 attn = F.softmax(scores, dim=2)
             output_attentioned = torch.einsum('bnmk,bnkd->bnmd', attn, V_grouped)
 
@@ -354,7 +346,7 @@ class AttentionArchitecture(nn.Module):
             # c) compute scores and column-wise softmax (over queries)
             scores = (Qg * Kg).sum(-1) / math.sqrt(d_model)  # (B, Nc, 4)
             if self.position_awareness:
-                scores = scores + self.pos_bias_onlyupper[i].view(1, 1, 1, -1)
+                scores = scores + self.pos_bias_onlyupper[i].view(1, 1, -1, 1)
 
             scores = F.softmax(scores, dim=2)  # (B, Nc, 4)
 
@@ -418,12 +410,6 @@ class AttentionArchitecture(nn.Module):
                     device=device
                 )
                 idx_lo = (base_lo.unsqueeze(1) + offs_l).reshape(-1)  # (Nc*4*4,)
-                #print(idx_lo)
-
-                # The following commented out lines can show that idx_lo contains all index values exactly once, which is what we need
-                #sorted_tensor = torch.sort(idx_lo)[0]
-                #expected = torch.arange(25600, dtype=idx_lo.dtype, device=idx_lo.device)
-                #print(torch.equal(sorted_tensor, expected))
 
                 # gather 16 lower keys per coarse cell
                 K_lower_grouped = K_list_lower[i-1].index_select(1, idx_lo).view(batch, Number_in_upper_keylayer, 16, d_model)
@@ -439,7 +425,7 @@ class AttentionArchitecture(nn.Module):
                 attn = F.softmax(scores, dim=3)
             else:
                 if self.position_awareness:
-                    scores = scores + self.pos_bias_onlyupper.view(1, 1, 1, -1)
+                    scores = scores + self.pos_bias_onlyupper.view(1, 1, -1, 1)
                 attn = F.softmax(scores, dim=2)
             output_attentioned = torch.einsum('bnmk,bnkd->bnmd', attn, V_grouped)
 

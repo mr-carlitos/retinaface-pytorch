@@ -31,9 +31,10 @@ class PoolingArchitecture(nn.Module):
         for in_channel in in_channels_list:
             self.convlist1x1.append(conv_bn1X1(in_channel, out_channels, stride=1, leaky=leaky))
 
-        self.deconvlist = nn.ModuleList()
-        for _ in range(len(in_channels_list) - 1):
-            self.deconvlist.append(deconv_bn_relu(out_channels, out_channels, leaky=leaky))
+        if mode == NeckMode.DECONV_POOLING or mode == NeckMode.NEIGHBOURHOOD_DECONV_POOLING or mode == NeckMode.ONLY_DECONV:
+            self.deconvlist = nn.ModuleList()
+            for _ in range(len(in_channels_list) - 1):
+                self.deconvlist.append(deconv_bn_relu(out_channels, out_channels, leaky=leaky))
 
         self.merge_3x3conv_list_secondpart = nn.ModuleList()
         for _ in range(len(in_channels_list) - 1):
@@ -44,32 +45,61 @@ class PoolingArchitecture(nn.Module):
             for _ in range(len(in_channels_list) - 1):
                 self.merge_3x3conv_list_thirdpart.append(conv_bn(out_channels, out_channels, leaky=leaky))
 
-        if mode == NeckMode.DECONV_POOLING or mode == NeckMode.NEIGHBOURHOOD_DECONV_POOLING:
+        if mode == NeckMode.DECONV_POOLING or mode == NeckMode.NEIGHBOURHOOD_DECONV_POOLING or mode == NeckMode.ONlY_POOL:
             self.pool = nn.MaxPool2d(kernel_size=2, stride=2, ceil_mode=True)
 
-    def forward(self, input):
-        if self.mode == NeckMode.NEIGHBOURHOOD_DECONV_POOLING:
-            return self.forward_neighbourhood(input)
-        else:
-            return self.forward_not_neighbourhood(input)
-
-    def forward_neighbourhood(self, input):
+    def preprocessing(self, inp):
         # input = OrderedDict, 128,256,512,2048
-        input = list(input.values())
+        inp = list(inp.values())
         # input = List, 128,256,512,2048
-        input = list(reversed(input))
+        inp = list(reversed(inp))
         # input = List, 2048,512,256,128
 
-        #First part: Let's apply 1x1conv to all our feature maps in order to obtain for all maps channel_size = 256
+        # First part: Let's apply 1x1conv to all our feature maps in order to obtain for all maps channel_size = 256
         output_list = list()
-        for inp, layer in zip(input, self.convlist1x1):
-            output_list.append(layer(inp))
+
+        for i, layer in zip(inp, self.convlist1x1):
+            output_list.append(layer(i))
+        return output_list, inp
+
+    def forward(self, inp):
+        if self.mode == NeckMode.ONlY_POOL:
+            return self.forward_onlypooling(inp)
+        elif self.mode == NeckMode.NEIGHBOURHOOD_DECONV_POOLING:
+            return self.forward_neighbourhood(inp)
+        else:
+            return self.forward_not_neighbourhood(inp)
+
+    def forward_onlypooling(self, inp):
+        output_list, inp = self.preprocessing(inp)
+        #List, 128,256,512,2048
+        output_list = list(reversed(output_list))
+
+        #We get C2
+        first_layer_output = output_list[0]
+        intermediate_outputs = list()
+
+        for idx in range(1, len(inp)):
+            if idx == 1:
+                x = first_layer_output
+            else:
+                x = intermediate_outputs[-1]
+
+            pooled = self.pool(x)
+            x = output_list[idx] + pooled
+            x = self.merge_3x3conv_list_secondpart[idx - 1](x)
+            intermediate_outputs.append(x)
+
+        return [first_layer_output] + intermediate_outputs
+
+    def forward_neighbourhood(self, inp):
+        output_list, inp = self.preprocessing(inp)
 
         #Second part: Do the FPN (but with Deconvolution instead Nearest Neighbour Upsampling)
         last_layer_output = output_list[0]
         intermediate_outputs = list()
 
-        for idx in range(1, len(input)):
+        for idx in range(1, len(inp)):
             if idx == 1:
                 x = last_layer_output
             else:
@@ -101,23 +131,14 @@ class PoolingArchitecture(nn.Module):
 
         return intermediate_outputs
 
-    def forward_not_neighbourhood(self, input):
-        # input = OrderedDict, 128,256,512,2048
-        input = list(input.values())
-        # input = List, 128,256,512,2048
-        input = list(reversed(input))
-        # input = List, 2048,512,256,128
-
-        #First part: Let's apply 1x1conv to all our feature maps in order to obtain for all maps channel_size = 256
-        output_list = list()
-        for inp, layer in zip(input, self.convlist1x1):
-            output_list.append(layer(inp))
+    def forward_not_neighbourhood(self, inp):
+        output_list, inp = self.preprocessing(inp)
 
         #Second part: Do the FPN (but with Deconvolution instead Nearest Neighbour Upsampling)
         last_layer_output = output_list[0]
         intermediate_outputs = list()
 
-        for idx in range(1, len(input)):
+        for idx in range(1, len(inp)):
             if idx == 1:
                 x = last_layer_output
             else:

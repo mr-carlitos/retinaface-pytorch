@@ -114,6 +114,9 @@ class RetinaFace(nn.Module):
         elif cfg['neck_mode'] == NeckMode.DECONV_POOLING:
             self.neck = PoolingArchitecture(in_channels_list, out_channels_fpn, NeckMode.DECONV_POOLING)
 
+        elif cfg['neck_mode'] == NeckMode.ONlY_POOL:
+            self.neck = PoolingArchitecture(in_channels_list, out_channels_fpn, NeckMode.ONlY_POOL)
+
         elif cfg['neck_mode'] == NeckMode.NEIGHBOURHOOD_DECONV_POOLING:
             self.neck = PoolingArchitecture(in_channels_list, out_channels_fpn, NeckMode.NEIGHBOURHOOD_DECONV_POOLING)
 

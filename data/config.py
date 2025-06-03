@@ -2,7 +2,7 @@
 from data.config_transform import NeckMode
 
 cfg_re50 = {
-    'name': 'CROSSATTENTION_FROMUPPERANDLOWER_PYRAMIDIAL',
+    'name': 'ONlY_POOL',
     'backbone_name': 'Resnet50-11k',
     'featuremaps_at_end_of_stage': False,
     #This means that for each feature map (corresponding to a particular scale), three square anchors are generated—one with a smaller size and one with a larger size.
@@ -16,10 +16,9 @@ cfg_re50 = {
     'steps': [4, 8, 16, 32, 64],
     # The variance list of parameters is in fact an abuse of terms. Instead it indicates and contains precomputed standard deviations of the landmark and bounding box targets. What the code is doing is some sort of ad-hoc normalization of the targets.
     'variance': [0.1, 0.2],
-    'neck_mode': NeckMode.CROSSATTENTION_FROMUPPERANDLOWER_PYRAMIDIAL,
+    'neck_mode': NeckMode.ONlY_POOL,
     #Learned positional embedding, only important when you do cross attention
     'position_awareness': True,
-    #'neck_mode': NeckMode.DECONV_POOLING,
     #For P6 to work, the 'return_layers' attribute must contain '3' in the list.
     'introduce_P6': True,
     #0 == C2, 1== C3, 2 == C4, 3 == C5
