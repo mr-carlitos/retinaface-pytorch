@@ -431,8 +431,7 @@ class AttentionArchitecture(nn.Module):
             if i > 0:
                 H_lower, W_lower = x[i - 1].shape[2:]
                 base_lo = (4 * u) * W_lower + (4 * v)
-                #torch.set_printoptions(profile="full")
-                #print(base_lo)
+
                 offs_l = torch.tensor(
                     [ii + jj*W_lower for jj in range(4) for ii in range(4)],
                     device=device
