@@ -1,12 +1,5 @@
 """
-Base implementation is based on:
-WiderFace evaluation code
-GitHub link: https://github.com/wondervictor/WiderFace-Evaluation
-author: wondervictor
-mail: tianhengcheng@gmail.com
-copyright@wondervictor
-
-I, Carlos, modified this so that we don't use the fixed intervals of 0.001 (from 0 to 1), but that we sort along the confidence scores.
+I modified the original evaluation script so that we don't use the fixed intervals of 0.001 (from 0 to 1), but that we sort along the confidence scores.
 """
 
 from __future__ import absolute_import
@@ -399,6 +392,9 @@ def evaluation_ap50(pred, gt_path):
         # [hard, medium, easy]
         pbar = tqdm.tqdm(range(event_num))
 
+        scores_buf = []  # list of 1-D arrays
+        tp_flags_buf = []  # list of 1-D uint8 arrays
+
         # for each setting (e.g., Parade)
         for i in pbar:
             pbar.set_description('Processing {}'.format(settings[setting_id]))
@@ -429,41 +425,36 @@ def evaluation_ap50(pred, gt_path):
                 ignore = np_round(ignore)
                 pred_recall, proposal_list = image_eval(pred_info, gt_boxes, ignore, iou_th)
 
-                false_positive_scores = []
+                # keep only the predictions that are to be evaluated
+                valid_mask = (proposal_list == 1)
+                if not np.any(valid_mask):
+                    continue  # nothing to record for this image
 
-                # 1) Check index 0
-                if (proposal_list.shape[0] > 0 and
-                        proposal_list[0] == 1 and
-                        pred_recall[0] == 0):
-                    false_positive_scores.append(pred_info[0, 4])
+                valid_scores = pred_info[valid_mask, 4]  # (K,)
+                valid_recall = pred_recall[valid_mask]  # (K,)
 
-                # 2) Check indices 1 … N−1
-                for jj in range(1, pred_info.shape[0]):
-                    if proposal_list[jj] != 1:
-                        continue
-                    # Only a real false positive if pred_recall did not increase here,
-                    # and proposal_list[j] == 1 confirms it was not ignored‐GT.
-                    if pred_recall[jj] == pred_recall[jj - 1]:
-                        false_positive_scores.append(pred_info[jj, 4])
+                # a TP is the first time the per-image recall increases
+                tp_flags_img = np.empty_like(valid_recall, dtype=np.uint8)
+                tp_flags_img[0] = 1 if valid_recall[0] > 0 else 0
+                tp_flags_img[1:] = (np.diff(valid_recall) > 0).astype(np.uint8)
 
-                _img_pr_info = img_pr_info(false_positive_scores, pred_info, proposal_list, pred_recall)
-                pr_curve_list.append(_img_pr_info)
-        big_array = np.concatenate(pr_curve_list, axis=0)
-        desc_idx = big_array[:, 2].argsort()[::-1]
-        sorted_desc = big_array[desc_idx]
+                # accumulate
+                scores_buf.append(valid_scores)
+                tp_flags_buf.append(tp_flags_img)
 
-        # 1) Split out the per‐row proposal‐counts and TP‐counts:
-        all_props = sorted_desc[:, 0]  # shape = (N_total,)
-        all_tps = sorted_desc[:, 1]  # shape = (N_total,)
+        # concatenate everything once
+        scores = np.concatenate(scores_buf, axis=0).astype(np.float32)
+        tp_flags = np.concatenate(tp_flags_buf, axis=0).astype(np.uint8)
 
-        # 2) Build global cumulative sums:
-        global_props = np.cumsum(all_props)  # shape = (N_total,)
-        global_tps = np.cumsum(all_tps)  # shape = (N_total,)
+        # sort detections by confidence (high to low)
+        order = scores.argsort()[::-1]
+        tp_flags = tp_flags[order]
 
-        # 3) Compute Precision and Recall at each “false‐positive score” step:
-        precision = global_tps / global_props  # shape = (N_total,)
-        recall = global_tps / float(count_face)  # shape = (N_total,)
+        tp_cum = np.cumsum(tp_flags)  # true positives so far
+        fp_cum = np.arange(1, tp_flags.size + 1) - tp_cum  # false positives so far
 
+        recall = tp_cum / float(count_face)  # monotone :D
+        precision = tp_cum / (tp_cum + fp_cum)  # will be envelope-corrected in voc_ap
         ap = voc_ap(recall, precision)
         aps.append(ap)
 
