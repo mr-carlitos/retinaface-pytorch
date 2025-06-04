@@ -456,6 +456,24 @@ def evaluation_ap50(pred, gt_path):
         recall = tp_cum / float(count_face)  # monotone :D
         precision = tp_cum / (tp_cum + fp_cum)  # will be envelope-corrected in voc_ap
         ap = voc_ap(recall, precision)
+
+        import matplotlib.pyplot as plt
+
+        # Plot PR curve for current setting
+        plt.figure(figsize=(8, 6))
+        plt.plot(recall, precision, linewidth=2, label=f'{settings[setting_id].capitalize()} (AP={ap:.3f})')
+        plt.xlabel('Recall')
+        plt.ylabel('Precision')
+        plt.title(f'Precision-Recall Curve - {settings[setting_id].capitalize()}')
+        plt.grid(True, alpha=0.3)
+        plt.legend()
+        plt.xlim([0, 1])
+        plt.ylim([0, 1])
+
+        # Save individual PR curve
+        plt.savefig(f'pr_curve_{settings[setting_id]}.png', dpi=300, bbox_inches='tight')
+        plt.close()
+
         aps.append(ap)
 
     print("==================== Results ====================")
