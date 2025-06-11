@@ -1,4 +1,5 @@
 """
+CARLOS CODE FILE
 I modified the original evaluation script so that we don't use the fixed intervals of 0.001 (from 0 to 1), but that we sort along the confidence scores.
 """
 
@@ -50,51 +51,6 @@ def get_gt_boxes(gt_dir):
     easy_gt_list = easy_mat['gt_list']
 
     return facebox_list, event_list, file_list, hard_gt_list, medium_gt_list, easy_gt_list
-
-
-def get_gt_boxes_from_txt(gt_path, cache_dir):
-    cache_file = os.path.join(cache_dir, 'gt_cache.pkl')
-    if os.path.exists(cache_file):
-        f = open(cache_file, 'rb')
-        boxes = pickle.load(f)
-        f.close()
-        return boxes
-
-    f = open(gt_path, 'r')
-    state = 0
-    lines = f.readlines()
-    lines = list(map(lambda x: x.rstrip('\r\n'), lines))
-    boxes = {}
-    print(len(lines))
-    f.close()
-    current_boxes = []
-    current_name = None
-    for line in lines:
-        if state == 0 and '--' in line:
-            state = 1
-            current_name = line
-            continue
-        if state == 1:
-            state = 2
-            continue
-
-        if state == 2 and '--' in line:
-            state = 1
-            boxes[current_name] = np.array(current_boxes).astype('float32')
-            current_name = line
-            current_boxes = []
-            continue
-
-        if state == 2:
-            box = [float(x) for x in line.split(' ')[:4]]
-            current_boxes.append(box)
-            continue
-
-    f = open(cache_file, 'wb')
-    pickle.dump(boxes, f)
-    f.close()
-    return boxes
-
 
 def read_pred_file(filepath):
     with open(filepath, 'r') as f:
@@ -456,7 +412,7 @@ def evaluation_ap50(pred, gt_path):
         recall = tp_cum / float(count_face)  # monotone :D
         precision = tp_cum / (tp_cum + fp_cum)  # will be envelope-corrected in voc_ap
         ap = voc_ap(recall, precision)
-
+        """
         import matplotlib.pyplot as plt
 
         # Plot PR curve for current setting
@@ -473,6 +429,7 @@ def evaluation_ap50(pred, gt_path):
         # Save individual PR curve
         plt.savefig(f'pr_curve_{settings[setting_id]}.png', dpi=300, bbox_inches='tight')
         plt.close()
+        """
 
         aps.append(ap)
 
@@ -485,7 +442,7 @@ def evaluation_ap50(pred, gt_path):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-p', '--pred', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-06-02_CROSSATTENTION_ONLYUPPER_PYRAMIDIAL_POSITIONALENC/like-mxnet/')
+    parser.add_argument('-p', '--pred', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-06-09_CROSSATTENTION_FROMUPPERANDLOWER_PYRAMIDIAL_NOPOSBIAS/like-mxnet/')
     parser.add_argument('-g', '--gt', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/widerface_evaluate/ground_truth')
     #parser.add_argument('-i', '--iter', default='140')
     #parser.add_argument('-d', '--det_result_txt', default=None)

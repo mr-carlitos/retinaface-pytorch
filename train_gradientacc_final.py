@@ -28,10 +28,10 @@ def get_args():
     parser.add_argument('--momentum', default=0.9, type=float, help='momentum')
     parser.add_argument('--weight_decay', default=5e-4, type=float, help='Weight decay for SGD')
     parser.add_argument('--gamma', default=0.1, type=float, help='Gamma update for SGD')
-    parser.add_argument('--save_folder', default='./save-checkpoints/2025-06-04_RESIDUAL_NORM_FROMUPPERANDLOWER_PYRAMIDIAL_POSBIAS/', help='Location to save checkpoint models')
+    parser.add_argument('--save_folder', default='./save-checkpoints/test/', help='Location to save checkpoint models')
 
     parser.add_argument('--batch_size', default=14, type=int, help='Location to save checkpoint models')
-    parser.add_argument('--epoch', default=80, type=int, help='Location to save checkpoint models')
+    parser.add_argument('--epoch', default=100, type=int, help='Location to save checkpoint models')
     parser.add_argument('--decay1', default=55, type=int, help='Location to save checkpoint models')
     parser.add_argument('--decay2', default=68, type=int, help='Location to save checkpoint models')
     parser.add_argument('--image_size', default=640, type=int, help='Location to save checkpoint models')

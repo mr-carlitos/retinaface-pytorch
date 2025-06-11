@@ -1,8 +1,9 @@
+# CARLOS CODE FILE: Modified the original config
 # config.py
 from data.config_transform import NeckMode
 
 cfg_re50 = {
-    'name': 'CROSSATTENTION_FROMUPPERANDLOWER_PYRAMIDIAL_RESIDUAL_NORM_POSBIAS',
+    'name': 'CROSSATTENTION_FROMUPPERANDLOWER_PYRAMIDIAL',
     'backbone_name': 'Resnet50-11k',
     'featuremaps_at_end_of_stage': False,
     #This means that for each feature map (corresponding to a particular scale), three square anchors are generated—one with a smaller size and one with a larger size.

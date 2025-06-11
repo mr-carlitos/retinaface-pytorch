@@ -18,11 +18,10 @@ from models.retinaface import RetinaFace
 from utils.box_utils import decode, clip_boxes
 from utils.timer import Timer
 
-
 parser = argparse.ArgumentParser(description='Retinaface')
-parser.add_argument('-m', '--trained_model', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-06-02_CROSSATTENTION_ONLYUPPER_PYRAMIDIAL_POSITIONALENC/CROSSATTENTION_FROMUPPER_PYRAMIDIAL_final.pth',
+parser.add_argument('-m', '--trained_model', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-06-09_CROSSATTENTION_FROMUPPERANDLOWER_PYRAMIDIAL_POSBIAS_MOREEPOCHS/CROSSATTENTION_FROMUPPERANDLOWER_PYRAMIDIAL_final.pth',
                     type=str, help='Trained state_dict file path to open')
-parser.add_argument('--save_folder', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-06-02_CROSSATTENTION_ONLYUPPER_PYRAMIDIAL_POSITIONALENC/like-mxnet/', type=str, help='Dir to save txt results')
+parser.add_argument('--save_folder', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-06-09_CROSSATTENTION_FROMUPPERANDLOWER_PYRAMIDIAL_POSBIAS_MOREEPOCHS/like-mxnet/', type=str, help='Dir to save txt results')
 parser.add_argument('--origin_size', default=False, type=bool, help='Whether use origin image size to evaluate')
 parser.add_argument('--cpu', action="store_true", default=False, help='Use cpu inference')
 parser.add_argument('--images_folder', default='/local/scratch/datasets/WiderFace/WIDER_val/images/', type=str, help='image dataset path')
@@ -73,6 +72,7 @@ def load_model(model, pretrained_path, load_to_cpu):
 
 
 if __name__ == '__main__':
+    torch.cuda.set_device(2)
     torch.set_grad_enabled(False)
 
     cfg = cfg_re50
@@ -84,7 +84,6 @@ if __name__ == '__main__':
     print(net)
     cudnn.benchmark = False
 
-    torch.cuda.set_device(4)
     device = torch.device("cpu" if args.cpu else "cuda")
     net = net.to(device)
 

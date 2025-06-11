@@ -8,7 +8,7 @@ from data import NeckMode
 from models.net import conv_bn1X1
 
 class AttentionArchitecture(nn.Module):
-    def __init__(self, in_channels_list, out_channels, mode, phase, position_awareness, residualconn = True, groupnorm = True):
+    def __init__(self, in_channels_list, out_channels, mode, phase, position_awareness, residualconn = False, groupnorm = False):
         super(AttentionArchitecture,self).__init__()
         leaky = 0
         if (out_channels <= 64):
