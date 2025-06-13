@@ -44,6 +44,7 @@ class RetinaFace(nn.Module):
         super(RetinaFace,self).__init__()
         self.cfg = cfg
         self.phase = phase
+        self.shared_ssh = cfg['shared_ssh']
         # in_channel = 256
         in_channels_stage = cfg['in_channel']
 
@@ -100,10 +101,10 @@ class RetinaFace(nn.Module):
         else:
             self.backbone = None
             raise Exception("Invalid 'backbone-name' parameter in config. No valid backbone!")
+
         # out_channels_fpn is 256
         out_channels_fpn = cfg['out_channel']
         self.p6_in_neck = False
-        self.position_awareness = cfg['position_awareness']
 
         if cfg['neck_mode'] == NeckMode.BASELINE_FPN:
             self.neck = FPN(in_channels_list, out_channels_fpn)
@@ -120,35 +121,24 @@ class RetinaFace(nn.Module):
         elif cfg['neck_mode'] == NeckMode.NEIGHBOURHOOD_DECONV_POOLING:
             self.neck = PoolingArchitecture(in_channels_list, out_channels_fpn, NeckMode.NEIGHBOURHOOD_DECONV_POOLING)
 
-        elif cfg['neck_mode'] == NeckMode.CROSSATTENTION_FROMUPPER_PYRAMIDIAL:
+        elif cfg['neck_mode'] == NeckMode.CROSSATTENTION:
             in_channels_list.append(in_channels_stage)
             self.p6_in_neck = True
-            self.neck = AttentionArchitecture(in_channels_list, out_channels_fpn, NeckMode.CROSSATTENTION_FROMUPPER_PYRAMIDIAL, self.phase, self.position_awareness)
-
-        elif cfg['neck_mode'] == NeckMode.CROSSATTENTION_FROMUPPERANDLOWER_PYRAMIDIAL:
-            in_channels_list.append(in_channels_stage)
-            self.p6_in_neck = True
-            self.neck = AttentionArchitecture(in_channels_list, out_channels_fpn, NeckMode.CROSSATTENTION_FROMUPPERANDLOWER_PYRAMIDIAL, self.phase, self.position_awareness)
-
-        elif cfg['neck_mode'] == NeckMode.CROSSATTENTION_FROMUPPER_HORIZONTAL:
-            in_channels_list.append(in_channels_stage)
-            self.p6_in_neck = True
-            self.neck = AttentionArchitecture(in_channels_list, out_channels_fpn, NeckMode.CROSSATTENTION_FROMUPPER_HORIZONTAL, self.phase, self.position_awareness)
-
-        elif cfg['neck_mode'] == NeckMode.CROSSATTENTION_FROMUPPERANDLOWER_HORIZONTAL:
-            in_channels_list.append(in_channels_stage)
-            self.p6_in_neck = True
-            self.neck = AttentionArchitecture(in_channels_list, out_channels_fpn, NeckMode.CROSSATTENTION_FROMUPPERANDLOWER_HORIZONTAL, self.phase, self.position_awareness)
+            self.neck = AttentionArchitecture(in_channels_list, out_channels_fpn, self.phase, cfg)
 
         else:
             self.conv1x1list = nn.ModuleList()
             for layer_index in range(len(self.cfg['return_layers'])):
                 self.conv1x1list.append(conv_bn1X1(in_channels_list[layer_index], out_channels_fpn, stride = 1))
 
-        self.context_modules_list = nn.ModuleList()
+        if self.shared_ssh:
+            self.shared_ssh_module = SSH(out_channels_fpn, out_channels_fpn)
 
-        for num_featuremap in range(number_of_featuremaps):
-            self.context_modules_list.append(SSH(out_channels_fpn, out_channels_fpn))
+        else:
+            self.context_modules_list = nn.ModuleList()
+
+            for num_featuremap in range(number_of_featuremaps):
+                self.context_modules_list.append(SSH(out_channels_fpn, out_channels_fpn))
 
         anchor_num = cfg['anchor_num']
 
@@ -204,12 +194,17 @@ class RetinaFace(nn.Module):
         if self.feature_P6 is not None:
             intermediate.append(self.feature_P6)
 
-        # Context Module
-        i = 0
+        # Context Module (SSH): Can be shared or not shared
         x = list()
-        for context_module in self.context_modules_list:
-            x.append(context_module(intermediate[i]))
-            i += 1
+
+        if self.shared_ssh:
+            for ii in intermediate:
+                x.append(self.shared_ssh_module(ii))
+        else:
+            i = 0
+            for context_module in self.context_modules_list:
+                x.append(context_module(intermediate[i]))
+                i += 1
 
         ##### CARLOS CODE ENDS HERE #######################
         bbox_regressions = torch.cat([self.BboxHead[i](feature) for i, feature in enumerate(x)], dim=1)

@@ -1,9 +1,7 @@
 ##### CARLOS CODE FILE ########
 from data import NeckMode
-from models.net import conv_bn1X1, conv_bn, conv_bn_no_relu
-import torch
+from models.net import conv_bn1X1, conv_bn
 import torch.nn as nn
-import torch.nn.functional as F
 
 def deconv_bn_relu(inp, oup, leaky = 0):
     num_groups = max(1, oup // 32) #For GroupNorm

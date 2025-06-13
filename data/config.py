@@ -1,6 +1,6 @@
 # CARLOS CODE FILE: Modified the original config
 # config.py
-from data.config_transform import NeckMode
+from data.config_transform import NeckMode, PositionalMode
 
 cfg_re50 = {
     'name': 'CROSSATTENTION_FROMUPPERANDLOWER_PYRAMIDIAL',
@@ -17,9 +17,20 @@ cfg_re50 = {
     'steps': [4, 8, 16, 32, 64],
     # The variance list of parameters is in fact an abuse of terms. Instead it indicates and contains precomputed standard deviations of the landmark and bounding box targets. What the code is doing is some sort of ad-hoc normalization of the targets.
     'variance': [0.1, 0.2],
-    'neck_mode': NeckMode.CROSSATTENTION_FROMUPPERANDLOWER_PYRAMIDIAL,
-    #Learned positional embedding, only important when you do cross attention
-    'position_awareness': True,
+    'neck_mode': NeckMode.CROSSATTENTION,
+    'shared_ssh': False,
+
+    #-----FOR CROSS ATTENTION------
+    'residualconn' : False,
+    'groupnorm' : False,
+    'query_focused_residualconn': False,
+    'pos_embedding': PositionalMode.POS_ENCODING,
+    'apply_convblock': True,
+    'attention_heads': 4,
+    'upperandlower': True,  # True = UPPERANDLOWER, False = ONLYUPPER
+    'pyramidial': True,     #True = Pyramidial, False= Horizontal
+    #------ END ---------
+
     #For P6 to work, the 'return_layers' attribute must contain '3' in the list.
     'introduce_P6': True,
     #0 == C2, 1== C3, 2 == C4, 3 == C5

@@ -13,20 +13,21 @@ class NeckMode(Enum):
     # upper layers via pooling and element-wise addition
     ONLY_DECONV = auto()
 
-    #TODO
     ONlY_POOL = auto()
 
     DECONV_POOLING = auto()
 
     NEIGHBOURHOOD_DECONV_POOLING = auto()
 
-    CROSSATTENTION_FROMUPPER_PYRAMIDIAL = auto()
+    CROSSATTENTION = auto()
 
-    CROSSATTENTION_FROMUPPER_HORIZONTAL = auto()
 
-    CROSSATTENTION_FROMUPPERANDLOWER_PYRAMIDIAL = auto()
+class PositionalMode(Enum):
+    POS_BIAS = auto()
 
-    CROSSATTENTION_FROMUPPERANDLOWER_HORIZONTAL = auto()
+    POS_ENCODING = auto()
+
+    NOTHING = auto()
 
 
 def transform_layer_config(return_layers):

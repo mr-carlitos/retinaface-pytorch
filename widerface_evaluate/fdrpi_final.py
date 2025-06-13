@@ -253,22 +253,38 @@ def main(pred, gt_path):
         # Use unique negative scores as thresholds
         thresholds = np.unique(negatives) if len(negatives) > 0 else [0]
 
-        #TODO: Continue here: Try to optimize this for loop and also, try to do better printing
+        #TODO: Continue here: Try to optimize this for loop
 
-        DR = []
-        FDPI = []
+        #DR = []
+        #FDPI = []
+#
+        #for thr in thresholds:
+        #    dr = np.sum(positives >= thr) / float(count_face)  # Detection Rate
+        #    fdpi = np.sum(negatives >= thr) / count_images  # False Detection Per Image
+        #    DR.append(dr)
+        #    FDPI.append(fdpi)
 
-        for thr in thresholds:
-            dr = np.sum(positives >= thr) / float(count_face)  # Detection Rate
-            fdpi = np.sum(negatives >= thr) / count_images  # False Detection Per Image
-            DR.append(dr)
-            FDPI.append(fdpi)
+        # Sort arrays once
+        pos_sorted = np.sort(positives)[::-1]  # descending order
+        neg_sorted = np.sort(negatives)[::-1]  # descending order
 
-        print("==================== Results ====================")
-        print("Easy   DR: {}, FDPI: {}".format(DR[-1], FDPI[-1]))
-        print("Medium DR: {}, FDPI: {}".format(DR[-1], FDPI[-1]))
-        print("Hard   DR: {}, FDPI: {}".format(DR[-1], FDPI[-1]))
-        print("=================================================")
+        # For each threshold, find how many scores are >= threshold
+        # searchsorted with 'right' side gives us the count
+        pos_counts = len(pos_sorted) - np.searchsorted(pos_sorted[::-1], thresholds, side='right')
+        neg_counts = len(neg_sorted) - np.searchsorted(neg_sorted[::-1], thresholds, side='right')
+
+        DR = pos_counts / float(count_face)
+        FDPI = neg_counts / count_images
+
+        aps.append((DR, FDPI))
+
+    print("==================== Results ====================")
+    print("Easy   DR: {}, FDPI: {}".format(aps[0][0][-1], aps[0][1][-1]))
+    print("Medium DR: {}, FDPI: {}".format(aps[1][0][-1], aps[1][1][-1]))
+    print("Hard   DR: {}, FDPI: {}".format(aps[2][0][-1], aps[2][1][-1]))
+    print("=================================================")
+
+
 
 
 if __name__ == "__main__":

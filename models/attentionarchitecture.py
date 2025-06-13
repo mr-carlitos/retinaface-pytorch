@@ -4,23 +4,32 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
-from data import NeckMode
-from models.net import conv_bn1X1
+from data import PositionalMode
+from models.net import conv_bn1X1, conv_bn
+from models.positionalencoding import FixedSinePositionalEncoding
 
 class AttentionArchitecture(nn.Module):
-    def __init__(self, in_channels_list, out_channels, mode, phase, position_awareness, residualconn = False, groupnorm = False):
+    def __init__(self, in_channels_list, out_channels, phase, cfg):
         super(AttentionArchitecture,self).__init__()
         leaky = 0
         if (out_channels <= 64):
             leaky = 0.1
 
         d_model = out_channels
-        self.mode = mode
+        self.d_model = out_channels
         self.phase = phase
-        self.position_awareness = position_awareness
+        self.position_awareness = cfg['pos_embedding'] # PositionalMode Enum
+        self.query_focused_residualconn = cfg['query_focused_residualconn']
+        self.residualconn = cfg['residualconn']
+        self.groupnorm = cfg['groupnorm']
+        self.apply_convblock = cfg['apply_convblock']
+        self.upperandlower = cfg['upperandlower']
+        self.pyramidial = cfg['pyramidial']
 
-        self.residualconn = residualconn
-        self.groupnorm = groupnorm
+        self.n_heads = cfg['attention_heads']  # rename for brevity
+        assert d_model % self.n_heads == 0, \
+            "d_model must be divisible by n_heads"
+        self.head_dim = d_model // self.n_heads
 
         # in_channels_list = [128,256,512,2048,256] -> Which are C2, C3, C4, C5, and C6/P6
         self.num_levels = len(in_channels_list)
@@ -28,8 +37,10 @@ class AttentionArchitecture(nn.Module):
         # Linear projections for Q,K,V
         self.q_projs = nn.ModuleList([nn.Linear(in_ch, d_model) for in_ch in in_channels_list[:-1]])
 
+        self.final_linear = nn.ModuleList([nn.Linear(d_model, d_model) for _ in in_channels_list[1:]])
+
         #PYRAMIDIAL -> First set of queries depends on C5, while the rest depends on the calculated (reused) intermediate feature maps, which per definition have channels = 256
-        if mode == NeckMode.CROSSATTENTION_FROMUPPER_PYRAMIDIAL or mode == NeckMode.CROSSATTENTION_FROMUPPERANDLOWER_PYRAMIDIAL:
+        if self.pyramidial:
             self.k_projs_upper = nn.ModuleList()
             self.v_projs_upper = nn.ModuleList()
 
@@ -39,22 +50,20 @@ class AttentionArchitecture(nn.Module):
             for step in range(len(in_channels_list)-2):
                 self.k_projs_upper.append(nn.Linear(d_model, d_model))
                 self.v_projs_upper.append(nn.Linear(d_model, d_model))
+
         #HORIZONTAL -> All sets of queries depend on the ResNet backbone, and hence, each feature map has a different channel size
-        elif mode == NeckMode.CROSSATTENTION_FROMUPPERANDLOWER_HORIZONTAL or mode == NeckMode.CROSSATTENTION_FROMUPPER_HORIZONTAL:
+        else:
             self.k_projs_upper = nn.ModuleList([nn.Linear(in_ch, d_model) for in_ch in in_channels_list[1:]])
             self.v_projs_upper = nn.ModuleList([nn.Linear(in_ch, d_model) for in_ch in in_channels_list[1:]])
 
-        else:
-            raise Exception("NeckMode is not set to a CROSSATTENTION mode (coming from Attention constructor)")
-
         #Own set of linear projections for the LOWER feature maps
-        if mode == NeckMode.CROSSATTENTION_FROMUPPERANDLOWER_HORIZONTAL or mode == NeckMode.CROSSATTENTION_FROMUPPERANDLOWER_PYRAMIDIAL:
+        if self.upperandlower:
             self.k_projs_lower = nn.ModuleList([nn.Linear(in_ch, d_model) for in_ch in in_channels_list[:-2]])
             self.v_projs_lower = nn.ModuleList([nn.Linear(in_ch, d_model) for in_ch in in_channels_list[:-2]])
 
         #Learn positional embedding while training
-        if self.position_awareness:
-            if mode == NeckMode.CROSSATTENTION_FROMUPPERANDLOWER_HORIZONTAL or mode == NeckMode.CROSSATTENTION_FROMUPPERANDLOWER_PYRAMIDIAL:
+        if self.position_awareness == PositionalMode.POS_BIAS:
+            if self.upperandlower:
                 # For layers that only have upper keys (the highest level)
                 self.pos_bias_onlyupper = nn.Parameter(torch.zeros(4))  # 4 queries attend to 1 upper key
 
@@ -69,17 +78,26 @@ class AttentionArchitecture(nn.Module):
                     nn.Parameter(torch.zeros(4))  # 4 queries attend to 1 upper key
                     for _ in range(self.num_levels - 1)
                 ])
+        elif cfg['pos_embedding'] == PositionalMode.POS_ENCODING:
+            self.fixed_pe = nn.ModuleList([
+                FixedSinePositionalEncoding(c) for c in in_channels_list[:-1]
+            ])
 
-        if residualconn:
+        if self.residualconn:
             self.convlist1x1 = nn.ModuleList()
             for in_channel in in_channels_list[:-1]:
                 self.convlist1x1.append(conv_bn1X1(in_channel, out_channels, stride=1, leaky=leaky))
 
-        if groupnorm:
+        if self.groupnorm:
             self.groupnormlist = nn.ModuleList()
             num_groups = max(1, out_channels // 32)  # For GroupNorm
             for _ in in_channels_list[:-1]:
                 self.groupnormlist.append(nn.GroupNorm(num_groups, out_channels))
+
+        if self.apply_convblock:
+            self.merge_list = nn.ModuleList()
+            for _ in in_channels_list[:-1]:
+                self.merge_list.append(conv_bn(out_channels, out_channels, leaky=leaky))
 
 
     def forward(self, x):
@@ -92,19 +110,7 @@ class AttentionArchitecture(nn.Module):
             for idx, x_entry in enumerate(x[:-1]):
                 convoluted_list.append(self.convlist1x1[idx](x_entry))
 
-        if self.mode == NeckMode.CROSSATTENTION_FROMUPPER_PYRAMIDIAL:
-            neck_computation = self.forward_onlyupper_pyramidial(x)
-
-        elif self.mode == NeckMode.CROSSATTENTION_FROMUPPERANDLOWER_PYRAMIDIAL:
-            neck_computation = self.forward_upperandlower_pyramidial(x)
-
-        elif self.mode == NeckMode.CROSSATTENTION_FROMUPPERANDLOWER_HORIZONTAL:
-            neck_computation = self.forward_upperandlower_horizontal(x)
-
-        elif self.mode == NeckMode.CROSSATTENTION_FROMUPPER_HORIZONTAL:
-            neck_computation = self.forward_onlyupper_horizontal(x)
-        else:
-            raise Exception("illegal (coming from Attention forward)")
+        neck_computation = self.forward_detail(x)
 
         if self.residualconn:
             for idx, neck_entry in enumerate(neck_computation):
@@ -184,280 +190,139 @@ class AttentionArchitecture(nn.Module):
         Q_grouped = Q.index_select(1, idx_query.view(-1)).view(batch, Number_in_keylayer, 4, d_model)  # (B, Nc, 4, d)
         return Q_grouped, idx_query, u_c, v_c
 
+    def forward_detail(self, x):
+        if self.position_awareness == PositionalMode.POS_ENCODING:
+            for lvl in range(self.num_levels - 1):  # C2 … C5
+                fmap = x[lvl]
+                B, C, H, W = fmap.shape
+                fmap = fmap + self.fixed_pe[lvl](H,W,fmap.device)
+                x[lvl] = fmap
 
-    # Attention in a top-down/pyramidial manner, down passing information from C6/P6 until P2
-    def forward_onlyupper_pyramidial(self, x):
-        outputs = []
-
-        # 1) Project Q for each level, K and V can only be calculated from the highest level for now
-        Q_list = []
-
-        kv_flat = x[-1].flatten(2).transpose(1, 2)  # (B, Nc, Cin_kv)
-        K_highestlevel = self.k_projs_upper[0](kv_flat)
-        V_highestlevel = self.v_projs_upper[0](kv_flat)
-
-        for i in range(self.num_levels-1):
-            # Q from level i
-            # C6/P6 will not act as query layer -> but all below will
-            q_flat = x[i].flatten(2).transpose(1, 2)  # (B, Nf, Cin_q)
-            Q_list.append(self.q_projs[i](q_flat))  # (B, Nf, d)
-
-        # 2) Perform local cross-attention per level
-        for i in range(self.num_levels - 2, -1, -1):
-            # from (batch ,C_in ,H, W) to (B, Nf, d)
-            Q = Q_list[i]  # (B, Nf, d)
-
-            if i == self.num_levels - 2:
-                K = K_highestlevel
-                V = V_highestlevel
-            else:
-                K = outputs[-1].flatten(2).transpose(1, 2)  # (B, Nc, Cin_kv)
-                k_proj_ind = self.num_levels-2-i
-                K = self.k_projs_upper[k_proj_ind](K)
-                V = outputs[-1].flatten(2).transpose(1, 2)  # (B, Nc, Cin_kv)
-                v_proj_ind = self.num_levels-2-i
-                V = self.v_projs_upper[v_proj_ind](V)
-
-            batch, Number_in_querylayer, d_model = Q.shape
-            _, Number_in_keylayer, _ = K.shape
-
-            H_querylayer, W_querylayer = x[i].shape[2:] # From C2 to C4 -> from 160 × 160 to 40 × 40
-            H_keylayer, W_keylayer = x[i + 1].shape[2:] # From C3 to C5 -> from 80 × 80 to 20 × 20
-            device = Q.device
-
-            Q_grouped,idx_query,_,_ = self.prepare_queries(Q, device, H_keylayer, W_keylayer, W_querylayer, batch, Number_in_keylayer, d_model)
-
-            Kg = K.unsqueeze(2).expand(-1, -1, 4, -1)  # (B, Nc, 4, d)
-            Vg = V.unsqueeze(2).expand(-1, -1, 4, -1)  # (B, Nc, 4, d)
-
-            # c) compute scores and column-wise softmax (over queries)
-            scores = (Q_grouped * Kg).sum(-1) / math.sqrt(d_model)  # (B, Nc, 4)
-            if self.position_awareness:
-                scores = scores + self.pos_bias_onlyupper[i].view(1, 1, -1)
-            scores = F.softmax(scores, dim=2)  # (B, Nc, 4)
-
-            # d) aggregate
-            output_attentioned = scores.unsqueeze(-1) * Vg  # (B, Nc, 4, d)
-
-            # e) Rearrange output of attention to have correct position
-            output_attentioned = self.reshape_attentioned(output_attentioned, batch, Number_in_keylayer, H_querylayer, W_querylayer, d_model, device, idx_query)
-            outputs.append(output_attentioned)
-
-        outputs = list(reversed(outputs))
-        return outputs
-
-
-    def forward_upperandlower_pyramidial(self, x):
         outputs = []
 
         # 1) Project Q, K_lower, V_lower for each level, K_upper and V_upper can only be calculated from the highest level for now
-        Q_list, K_list_lower, V_list_lower = [], [], []
+        Q_list, K_list_upper, V_list_upper, K_list_lower, V_list_lower = [], [], [], [], []
 
-        kv_flat = x[-1].flatten(2).transpose(1, 2)  # (B, Nc, Cin_kv)
-        K_highestlevel = self.k_projs_upper[0](kv_flat)
-        V_highestlevel = self.v_projs_upper[0](kv_flat)
+        if self.pyramidial:
+            kv_flat = x[-1].flatten(2).transpose(1, 2)  # (B, Nc, Cin_kv)
+            K_highestlevel = self.k_projs_upper[0](kv_flat)
+            V_highestlevel = self.v_projs_upper[0](kv_flat)
 
         for i in range(self.num_levels-1):
             q_flat = x[i].flatten(2).transpose(1, 2)  # (B, Nf, Cin_q)
             Q_list.append(self.q_projs[i](q_flat))  # (B, Nf, d)
 
-            if i > 0:
-                kv_flat_lower = x[i - 1].flatten(2).transpose(1, 2)
-                K_list_lower.append(self.k_projs_lower[i-1](kv_flat_lower))
-                V_list_lower.append(self.v_projs_lower[i-1](kv_flat_lower))
+            if self.upperandlower:
+                if i > 0:
+                    kv_flat_lower = x[i - 1].flatten(2).transpose(1, 2)
+                    K_list_lower.append(self.k_projs_lower[i-1](kv_flat_lower))
+                    V_list_lower.append(self.v_projs_lower[i-1](kv_flat_lower))
 
+            if not self.pyramidial:
+                kv_flat_upper = x[i + 1].flatten(2).transpose(1, 2)
+                K_list_upper.append(self.k_projs_upper[i](kv_flat_upper))
+                V_list_upper.append(self.v_projs_upper[i](kv_flat_upper))
+
+        # From 3 to 0 -> 3, 2, 1, 0
         for i in range(self.num_levels - 2, -1, -1):
             # from (batch ,C_in ,H, W) to (B, Nf, d_model)
             Q = Q_list[i]  # (B, Nf, d_model)
 
-            if i == self.num_levels - 2:
-                K_upper = K_highestlevel
-                V_upper = V_highestlevel
-            else:
-                K_upper = outputs[-1].flatten(2).transpose(1, 2)  # (B, Nc, Cin_kv)
-                k_upp_ind = self.num_levels-2-i
-                K_upper = self.k_projs_upper[k_upp_ind](K_upper)
-                V_upper = outputs[-1].flatten(2).transpose(1, 2)  # (B, Nc, Cin_kv)
-                v_upp_ind = self.num_levels-2-i
-                V_upper = self.v_projs_upper[v_upp_ind](V_upper)
+            if self.pyramidial:
 
-            batch, Number_in_querylayer, d_model = Q.shape
-            _, Number_in_upper_keylayer, _ = K_upper.shape
+                if i == self.num_levels - 2:
+                    K_upper = K_highestlevel
+                    V_upper = V_highestlevel
+                else:
+                    K_upper = outputs[-1].flatten(2).transpose(1, 2)  # (B, Nc, Cin_kv)
+                    k_upp_ind = self.num_levels-2-i
+                    K_upper = self.k_projs_upper[k_upp_ind](K_upper)
+                    V_upper = outputs[-1].flatten(2).transpose(1, 2)  # (B, Nc, Cin_kv)
+                    v_upp_ind = self.num_levels-2-i
+                    V_upper = self.v_projs_upper[v_upp_ind](V_upper)
+            else:
+                K_upper = K_list_upper[i]  # (B, Nc, d)
+                V_upper = V_list_upper[i]  # (B, Nc, d)
+
+            # ── [MHA] split into h heads ──────────────────────────────
+            Q = Q.view(*Q.shape[:-1], self.n_heads, self.head_dim)  # (B,N,h,d_h)  # [MHA]
+            K_upper = K_upper.view(*K_upper.shape[:-1], self.n_heads, self.head_dim)  # [MHA]
+            V_upper = V_upper.view(*V_upper.shape[:-1], self.n_heads, self.head_dim)  # [MHA]
+
+            d_model = self.d_model
+
+            batch, Number_in_querylayer, _, _ = Q.shape
+            _, Number_in_upper_keylayer, _, _ = K_upper.shape
 
             H_querylayer, W_querylayer = x[i].shape[2:] # From C2 to C4 -> from 160 × 160 to 40 × 40
             H_upper_keylayer, W_upper_keylayer = x[i + 1].shape[2:] # From C3 to C5 -> from 80 × 80 to 20 × 20
             device = Q.device
 
-            Q_grouped, idx_query, u, v = self.prepare_queries(Q, device, H_upper_keylayer, W_upper_keylayer, W_querylayer, batch, Number_in_upper_keylayer,
-                                      d_model)
+            Q_grouped, idx_query, u, v = self.prepare_queries(Q.view(batch, Number_in_querylayer, self.n_heads * self.head_dim) # flatten back temporarily
+                                                              ,device, H_upper_keylayer, W_upper_keylayer, W_querylayer, batch, Number_in_upper_keylayer, d_model)
+            # ── [MHA] restore (h,d_h) split after grouping ─────────────
+            Q_grouped = Q_grouped.view(batch, Number_in_upper_keylayer, 4, self.n_heads, self.head_dim)
+
+            # [MHA]: (B,Nk,1,h,d_h)
             K_grouped = K_upper.unsqueeze(2)
             V_grouped = V_upper.unsqueeze(2)
 
-            K_lower_grouped = None
+            if self.upperandlower:
+                #Keys/Values from lower layer need their own grouping -> hence also their own index vector
+                if i > 0:
+                    H_lower, W_lower = x[i - 1].shape[2:]
+                    base_lo = (4 * u) * W_lower + (4 * v)
+                    # Create 4x4 neighborhood offsets for lower resolution keys
+                    offs_l = torch.tensor(
+                        [ii + jj*W_lower for jj in range(4) for ii in range(4)],
+                        device=device
+                    )
+                    idx_lo = (base_lo.unsqueeze(1) + offs_l).reshape(-1)
 
-            #Keys/Values from lower layer need their own grouping -> hence also their own index vector
-            if i > 0:
-                H_lower, W_lower = x[i - 1].shape[2:]
-                base_lo = (4 * u) * W_lower + (4 * v)
-                offs_l = torch.tensor(
-                    [ii + jj*W_lower for jj in range(4) for ii in range(4)],
-                    device=device
-                )
-                idx_lo = (base_lo.unsqueeze(1) + offs_l).reshape(-1)
-
-                # gather 16 lower keys per coarse cell
-                K_lower_grouped = K_list_lower[i-1].index_select(1, idx_lo).view(batch, Number_in_upper_keylayer, 16, d_model)
-                V_lower_grouped = V_list_lower[i-1].index_select(1, idx_lo).view(batch, Number_in_upper_keylayer, 16, d_model)
-                K_grouped = torch.cat([K_grouped, K_lower_grouped], dim = 2)
-                V_grouped = torch.cat([V_grouped, V_lower_grouped], dim = 2)
+                    # gather 16 lower keys per coarse cell
+                    K_lower_grouped = K_list_lower[i-1].index_select(1, idx_lo).view(batch, Number_in_upper_keylayer, 16, self.n_heads, self.head_dim)
+                    V_lower_grouped = V_list_lower[i-1].index_select(1, idx_lo).view(batch, Number_in_upper_keylayer, 16, self.n_heads, self.head_dim)
+                    K_grouped = torch.cat([K_grouped, K_lower_grouped], dim = 2)
+                    V_grouped = torch.cat([V_grouped, V_lower_grouped], dim = 2)
 
             # c) compute scores and column-wise softmax (over queries)
-            scores = torch.einsum('bnmd,bnkd->bnmk', Q_grouped, K_grouped) / math.sqrt(d_model)
-            if K_lower_grouped is not None:
-                if self.position_awareness:
-                    scores = scores + self.pos_bias_upperandlower[i-1].view(1, 1, 1, -1)
+
+            # Qg : (B, Nk, 4,  h, d_h)
+            # Kg : (B, Nk, K,  h, d_h)   (K = 1 or 17)
+            scores = torch.einsum('bnqhd,bnkhd->bnqkh', Q_grouped, K_grouped)  # (B, Nk, 4, K, h)
+            scores = scores / math.sqrt(self.head_dim)
+
+            if self.upperandlower and i>0:
+                if self.position_awareness == PositionalMode.POS_BIAS:
+                    scores = scores + self.pos_bias_upperandlower[i-1].view(1, 1, 1, -1, 1)
                 attn = F.softmax(scores, dim=3)
             else:
-                if self.position_awareness:
-                    scores = scores + self.pos_bias_onlyupper.view(1, 1, -1, 1)
+                if self.position_awareness == PositionalMode.POS_BIAS:
+                    if self.upperandlower:
+                        scores = scores + self.pos_bias_onlyupper.view(1, 1, -1, 1, 1)
+                    else:
+                        scores = scores + self.pos_bias_onlyupper[i].view(1, 1, -1, 1, 1)
                 attn = F.softmax(scores, dim=2)
-            output_attentioned = torch.einsum('bnmk,bnkd->bnmd', attn, V_grouped)
+
+            output_attentioned = torch.einsum('bnqkh,bnkhd->bnqhd', attn, V_grouped)  # (B,Nk,4,h,d_h)  # [MHA]
+
+            # ── [MHA] merge heads back to d_model ─────────────────────
+            output_attentioned = output_attentioned.reshape(batch, Number_in_upper_keylayer, 4, self.n_heads * self.head_dim)  # (B,Nk,4,d_model)  # [MHA]
 
             output_attentioned = self.reshape_attentioned(output_attentioned, batch, Number_in_upper_keylayer, H_querylayer,
                                                           W_querylayer, d_model, device, idx_query)
+
+            output_attentioned = output_attentioned.flatten(2).transpose(1, 2)
+            output_attentioned = self.final_linear[i](output_attentioned)
+            output_attentioned = output_attentioned.transpose(1, 2).contiguous().view(batch, d_model, H_querylayer, W_querylayer)
+
+            if self.query_focused_residualconn:
+                Q_new = Q.view(batch, Number_in_querylayer, self.n_heads * self.head_dim).transpose(1, 2).contiguous().view(batch, d_model, H_querylayer, W_querylayer)
+                output_attentioned = output_attentioned + Q_new
+
+            if self.apply_convblock:
+                output_attentioned = self.merge_list[i](output_attentioned)
+
             outputs.append(output_attentioned)
         outputs = list(reversed(outputs))
-        return outputs
-
-    ## horizontal Version of forward()
-    def forward_onlyupper_horizontal(self, x,):
-        # input = OrderedDict, 128,256,512,2048(,256)
-        outputs = []
-
-        # 1) Project Q, K, V for each adjacent pair
-        Q_list, K_list, V_list = [], [], []
-
-        for i in range(self.num_levels):
-            # Q from level i
-
-            # C5 will not act as query layer -> but all below will
-            if i < (self.num_levels-1):
-                q_flat = x[i].flatten(2).transpose(1, 2)  # (B, Nf, Cin_q)
-                Q_list.append(self.q_projs[i](q_flat))  # (B, Nf, d)
-
-            # C2 will not act as key/value layer -> but all above will
-            # K, V from level i
-            if i > 0:
-                kv_flat = x[i].flatten(2).transpose(1, 2)  # (B, Nc, Cin_kv)
-                K_list.append(self.k_projs_upper[i-1](kv_flat))  # (B, Nc, d)
-                V_list.append(self.v_projs_upper[i-1](kv_flat))  # (B, Nc, d)
-
-        # 2) Perform local cross-attention per level
-        for i in range(self.num_levels - 1):
-            # from (batch ,C_in ,H, W) to (B, Nf, d)
-            Q = Q_list[i]  # (B, Nf, d)
-            K = K_list[i]  # (B, Nc, d)
-            V = V_list[i]  # (B, Nc, d)
-
-            batch, Number_in_querylayer, d_model = Q.shape
-            _, Number_in_keylayer, _ = K.shape
-
-            H_querylayer, W_querylayer = x[i].shape[2:] # From C2 to C4 -> from 160 × 160 to 40 × 40
-            H_keylayer, W_keylayer = x[i + 1].shape[2:] # From C3 to C5 -> from 80 × 80 to 20 × 20
-            device = Q.device
-
-            Qg,idx_query,_,_ = self.prepare_queries(Q, device, H_keylayer, W_keylayer, W_querylayer, batch, Number_in_keylayer,
-                                      d_model)
-            Kg = K.unsqueeze(2).expand(-1, -1, 4, -1)  # (B, Nc, 4, d)
-            Vg = V.unsqueeze(2).expand(-1, -1, 4, -1)  # (B, Nc, 4, d)
-
-            # c) compute scores and column-wise softmax (over queries)
-            scores = (Qg * Kg).sum(-1) / math.sqrt(d_model)  # (B, Nc, 4)
-            if self.position_awareness:
-                scores = scores + self.pos_bias_onlyupper[i].view(1, 1, -1, 1)
-
-            scores = F.softmax(scores, dim=2)  # (B, Nc, 4)
-
-            # d) aggregate
-            output_attentioned = scores.unsqueeze(-1) * Vg  # (B, Nc, 4, d)
-            output_attentioned = self.reshape_attentioned(output_attentioned, batch, Number_in_keylayer, H_querylayer,
-                                                          W_querylayer, d_model, device, idx_query)
-            outputs.append(output_attentioned)
-
-        return outputs
-
-    ## horizontal Version of forward()
-    def forward_upperandlower_horizontal(self, x):
-        outputs = []
-
-        # 1) Project Q, K, V for each adjacent pair
-        Q_list, K_list_upper, V_list_upper, K_list_lower, V_list_lower = [], [], [], [], []
-
-        for i in range(self.num_levels-1):
-            q_flat = x[i].flatten(2).transpose(1, 2)  # (B, Nf, Cin_q)
-            Q_list.append(self.q_projs[i](q_flat))  # (B, Nf, d)
-
-            kv_flat_upper = x[i + 1].flatten(2).transpose(1, 2)
-            K_list_upper.append(self.k_projs_upper[i](kv_flat_upper))
-            V_list_upper.append(self.v_projs_upper[i](kv_flat_upper))
-            if i > 0:
-                kv_flat_lower = x[i - 1].flatten(2).transpose(1, 2)
-                K_list_lower.append(self.k_projs_lower[i-1](kv_flat_lower))
-                V_list_lower.append(self.v_projs_lower[i-1](kv_flat_lower))
-
-        # 2) Perform local cross-attention per level
-        for i in range(self.num_levels - 1):
-            # from (batch ,C_in ,H, W) to (B, Nf, d)
-            Q = Q_list[i]  # (B, Nf, d)
-            K_upper = K_list_upper[i]  # (B, Nc, d)
-            V_upper = V_list_upper[i]  # (B, Nc, d)
-
-            batch, Number_in_querylayer, d_model = Q.shape
-            _, Number_in_upper_keylayer, _ = K_upper.shape
-
-            H_querylayer, W_querylayer = x[i].shape[2:] # From C2 to C4 -> from 160 × 160 to 40 × 40
-            H_upper_keylayer, W_upper_keylayer = x[i + 1].shape[2:] # From C3 to C5 -> from 80 × 80 to 20 × 20
-            device = Q.device
-
-            Q_grouped, idx_query, u, v = self.prepare_queries(Q, device, H_upper_keylayer, W_upper_keylayer, W_querylayer, batch, Number_in_upper_keylayer,
-                                      d_model)
-
-            K_grouped = K_upper.unsqueeze(2)
-            V_grouped = V_upper.unsqueeze(2)
-
-            K_lower_grouped = None
-
-            #Keys/Values from lower layer need their own grouping -> hence also their own index vector
-            if i > 0:
-                H_lower, W_lower = x[i - 1].shape[2:]
-                base_lo = (4 * u) * W_lower + (4 * v)
-
-                offs_l = torch.tensor(
-                    [ii + jj*W_lower for jj in range(4) for ii in range(4)],
-                    device=device
-                )
-                idx_lo = (base_lo.unsqueeze(1) + offs_l).reshape(-1)  # (Nc*4*4,)
-
-                # gather 16 lower keys per coarse cell
-                K_lower_grouped = K_list_lower[i-1].index_select(1, idx_lo).view(batch, Number_in_upper_keylayer, 16, d_model)
-                V_lower_grouped = V_list_lower[i-1].index_select(1, idx_lo).view(batch, Number_in_upper_keylayer, 16, d_model)
-                K_grouped = torch.cat([K_grouped, K_lower_grouped], dim = 2)
-                V_grouped = torch.cat([V_grouped, V_lower_grouped], dim = 2)
-
-            # c) compute scores and column-wise softmax (over queries)
-            scores = torch.einsum('bnmd,bnkd->bnmk', Q_grouped, K_grouped) / math.sqrt(d_model)
-            if K_lower_grouped is not None:
-                if self.position_awareness:
-                    scores = scores + self.pos_bias_upperandlower[i - 1].view(1, 1, 1, -1)
-                attn = F.softmax(scores, dim=3)
-            else:
-                if self.position_awareness:
-                    scores = scores + self.pos_bias_onlyupper.view(1, 1, -1, 1)
-                attn = F.softmax(scores, dim=2)
-            output_attentioned = torch.einsum('bnmk,bnkd->bnmd', attn, V_grouped)
-
-            output_attentioned = self.reshape_attentioned(output_attentioned, batch, Number_in_upper_keylayer, H_querylayer,
-                                                          W_querylayer, d_model, device, idx_query)
-            outputs.append(output_attentioned)
-
         return outputs
