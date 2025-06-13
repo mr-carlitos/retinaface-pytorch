@@ -18,3 +18,4 @@ save-checkpoints
 widerface_evaluate/build/
 *.log
 *.yml
+DEPRECATED/training
