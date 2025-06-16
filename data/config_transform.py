@@ -25,7 +25,9 @@ class NeckMode(Enum):
 class PositionalMode(Enum):
     POS_BIAS = auto()
 
-    POS_ENCODING = auto()
+    POS_ENCODING_RAW_FMAPS = auto()
+
+    POS_ENCODING_QKV = auto()
 
     NOTHING = auto()
 

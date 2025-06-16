@@ -5,8 +5,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 from data import PositionalMode
-from models.net import conv_bn1X1, conv_bn
-from models.positionalencoding import FixedSinePositionalEncoding
+from modules.net import conv_bn1X1, conv_bn
+from modules.positionalencoding_rawmaps import FixedSinePositionalEncoding
+from modules.positionalencoding_QKV import FixedSinePositionalEncodingQKV
 
 class AttentionArchitecture(nn.Module):
     def __init__(self, in_channels_list, out_channels, phase, cfg):
@@ -25,6 +26,7 @@ class AttentionArchitecture(nn.Module):
         self.apply_convblock = cfg['apply_convblock']
         self.upperandlower = cfg['upperandlower']
         self.pyramidial = cfg['pyramidial']
+        self.use_WO = cfg['use_W^O']
 
         self.n_heads = cfg['attention_heads']  # rename for brevity
         assert d_model % self.n_heads == 0, \
@@ -37,7 +39,8 @@ class AttentionArchitecture(nn.Module):
         # Linear projections for Q,K,V
         self.q_projs = nn.ModuleList([nn.Linear(in_ch, d_model) for in_ch in in_channels_list[:-1]])
 
-        self.final_linear = nn.ModuleList([nn.Linear(d_model, d_model) for _ in in_channels_list[1:]])
+        if self.use_WO:
+            self.final_linear = nn.ModuleList([nn.Linear(d_model, d_model) for _ in in_channels_list[1:]])
 
         #PYRAMIDIAL -> First set of queries depends on C5, while the rest depends on the calculated (reused) intermediate feature maps, which per definition have channels = 256
         if self.pyramidial:
@@ -78,10 +81,15 @@ class AttentionArchitecture(nn.Module):
                     nn.Parameter(torch.zeros(4))  # 4 queries attend to 1 upper key
                     for _ in range(self.num_levels - 1)
                 ])
-        elif cfg['pos_embedding'] == PositionalMode.POS_ENCODING:
+        elif cfg['pos_embedding'] == PositionalMode.POS_ENCODING_RAW_FMAPS:
             self.fixed_pe = nn.ModuleList([
                 FixedSinePositionalEncoding(c) for c in in_channels_list[:-1]
             ])
+
+        elif cfg['pos_embedding'] == PositionalMode.POS_ENCODING_QKV:
+            pos_enc_qkv = FixedSinePositionalEncodingQKV(self.head_dim).forward()
+            self.fixed_pe_q = pos_enc_qkv[0]
+            self.fixed_pe_kv = pos_enc_qkv[1]
 
         if self.residualconn:
             self.convlist1x1 = nn.ModuleList()
@@ -191,7 +199,7 @@ class AttentionArchitecture(nn.Module):
         return Q_grouped, idx_query, u_c, v_c
 
     def forward_detail(self, x):
-        if self.position_awareness == PositionalMode.POS_ENCODING:
+        if self.position_awareness == PositionalMode.POS_ENCODING_RAW_FMAPS:
             for lvl in range(self.num_levels - 1):  # C2 … C5
                 fmap = x[lvl]
                 B, C, H, W = fmap.shape
@@ -263,6 +271,12 @@ class AttentionArchitecture(nn.Module):
             # ── [MHA] restore (h,d_h) split after grouping ─────────────
             Q_grouped = Q_grouped.view(batch, Number_in_upper_keylayer, 4, self.n_heads, self.head_dim)
 
+            if self.position_awareness == PositionalMode.POS_ENCODING_QKV:
+                Q_grouped = Q_grouped.view(batch, Number_in_upper_keylayer, 2 , 2, self.n_heads, self.head_dim)
+                q_pos_enc = self.fixed_pe_q.unsqueeze(0).unsqueeze(0).unsqueeze(4).expand(batch, Number_in_upper_keylayer,-1, -1, self.n_heads,-1).to(device)
+                Q_grouped = Q_grouped + q_pos_enc
+                Q_grouped = Q_grouped.view(batch, Number_in_upper_keylayer, 4, self.n_heads, self.head_dim)
+
             # [MHA]: (B,Nk,1,h,d_h)
             K_grouped = K_upper.unsqueeze(2)
             V_grouped = V_upper.unsqueeze(2)
@@ -282,6 +296,17 @@ class AttentionArchitecture(nn.Module):
                     # gather 16 lower keys per coarse cell
                     K_lower_grouped = K_list_lower[i-1].index_select(1, idx_lo).view(batch, Number_in_upper_keylayer, 16, self.n_heads, self.head_dim)
                     V_lower_grouped = V_list_lower[i-1].index_select(1, idx_lo).view(batch, Number_in_upper_keylayer, 16, self.n_heads, self.head_dim)
+
+                    if self.position_awareness == PositionalMode.POS_ENCODING_QKV:
+                        K_lower_grouped = K_lower_grouped.view(batch, Number_in_upper_keylayer, 4,4 , self.n_heads, self.head_dim)
+                        kv_pos_enc = self.fixed_pe_kv.unsqueeze(0).unsqueeze(0).unsqueeze(4).expand(batch,
+                                                                                                  Number_in_upper_keylayer,
+                                                                                                  -1, -1, self.n_heads,
+                                                                                                  -1).to(device)
+                        K_lower_grouped = K_lower_grouped + kv_pos_enc
+                        ## I decided to only positionally encode the Keys, not the Values
+                        K_lower_grouped = K_lower_grouped.view(batch, Number_in_upper_keylayer, 16, self.n_heads, self.head_dim)
+
                     K_grouped = torch.cat([K_grouped, K_lower_grouped], dim = 2)
                     V_grouped = torch.cat([V_grouped, V_lower_grouped], dim = 2)
 
@@ -310,11 +335,12 @@ class AttentionArchitecture(nn.Module):
             output_attentioned = output_attentioned.reshape(batch, Number_in_upper_keylayer, 4, self.n_heads * self.head_dim)  # (B,Nk,4,d_model)  # [MHA]
 
             output_attentioned = self.reshape_attentioned(output_attentioned, batch, Number_in_upper_keylayer, H_querylayer,
-                                                          W_querylayer, d_model, device, idx_query)
+                                                          W_querylayer, d_model, device, idx_query) # B, d_model, H_query, W_query
 
-            output_attentioned = output_attentioned.flatten(2).transpose(1, 2)
-            output_attentioned = self.final_linear[i](output_attentioned)
-            output_attentioned = output_attentioned.transpose(1, 2).contiguous().view(batch, d_model, H_querylayer, W_querylayer)
+            if self.use_WO:
+                output_attentioned = output_attentioned.flatten(2).transpose(1, 2) # B, (H_query * W_query =) N, d_model
+                output_attentioned = self.final_linear[i](output_attentioned)
+                output_attentioned = output_attentioned.transpose(1, 2).contiguous().view(batch, d_model, H_querylayer, W_querylayer)
 
             if self.query_focused_residualconn:
                 Q_new = Q.view(batch, Number_in_querylayer, self.n_heads * self.head_dim).transpose(1, 2).contiguous().view(batch, d_model, H_querylayer, W_querylayer)

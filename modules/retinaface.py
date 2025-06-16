@@ -6,11 +6,11 @@ from collections import OrderedDict
 
 from data import NeckMode
 from data.config_transform import transform_layer_config
-from models.net import conv_bn1X1
-from models.net import FPN as FPN
-from models.net import SSH as SSH
-from models.poolingarchitecture import PoolingArchitecture
-from models.attentionarchitecture import AttentionArchitecture
+from modules.net import conv_bn1X1
+from modules.net import FPN as FPN
+from modules.net import SSH as SSH
+from modules.poolingarchitecture import PoolingArchitecture
+from modules.attentionarchitecture import AttentionArchitecture
 
 class ClassHead(nn.Module):
     def __init__(self, inchannels, num_anchors):

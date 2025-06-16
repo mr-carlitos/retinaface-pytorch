@@ -9,7 +9,7 @@ from layers.modules import MultiTaskLossWithOHEM, MultiTaskLossWithFocalLoss
 from layers.functions.prior_box import PriorBox
 import time
 import datetime
-from models.retinaface import RetinaFace
+from modules.retinaface import RetinaFace
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.distributed as dist
 from dotenv import load_dotenv
@@ -28,7 +28,7 @@ def get_args():
     parser.add_argument('--momentum', default=0.9, type=float, help='momentum')
     parser.add_argument('--weight_decay', default=5e-4, type=float, help='Weight decay for SGD')
     parser.add_argument('--gamma', default=0.1, type=float, help='Gamma update for SGD')
-    parser.add_argument('--save_folder', default='./save-checkpoints/2025-06-13_UPLOW_PYRA/', help='Location to save checkpoint models')
+    parser.add_argument('--save_folder', default='./save-checkpoints/2025-06-16_GROUPNORM/', help='Location to save checkpoint models')
 
     parser.add_argument('--batch_size', default=14, type=int, help='Location to save checkpoint models')
     parser.add_argument('--epoch', default=80, type=int, help='Location to save checkpoint models')

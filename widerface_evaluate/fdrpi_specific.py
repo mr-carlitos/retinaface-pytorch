@@ -253,23 +253,13 @@ def main(pred, gt_path):
         # Use unique negative scores as thresholds
         thresholds = np.unique(negatives) if len(negatives) > 0 else [0]
 
-        #TODO: Continue here: Try to optimize this for loop
-
-        #DR = []
-        #FDPI = []
-#
-        #for thr in thresholds:
-        #    dr = np.sum(positives >= thr) / float(count_face)  # Detection Rate
-        #    fdpi = np.sum(negatives >= thr) / count_images  # False Detection Per Image
-        #    DR.append(dr)
-        #    FDPI.append(fdpi)
-
         # Sort arrays once
         pos_sorted = np.sort(positives)[::-1]  # descending order
         neg_sorted = np.sort(negatives)[::-1]  # descending order
 
         # For each threshold, find how many scores are >= threshold
         # searchsorted with 'right' side gives us the count
+        #TODO: Check if searchsorted is really ok to use here
         pos_counts = len(pos_sorted) - np.searchsorted(pos_sorted[::-1], thresholds, side='right')
         neg_counts = len(neg_sorted) - np.searchsorted(neg_sorted[::-1], thresholds, side='right')
 
@@ -278,22 +268,26 @@ def main(pred, gt_path):
 
         aps.append((DR, FDPI))
 
-    print("==================== Results ====================")
-    print("Easy   DR: {}, FDPI: {}".format(aps[0][0][-1], aps[0][1][-1]))
-    print("Medium DR: {}, FDPI: {}".format(aps[1][0][-1], aps[1][1][-1]))
-    print("Hard   DR: {}, FDPI: {}".format(aps[2][0][-1], aps[2][1][-1]))
-    print("=================================================")
-
+    for (DR, FDPI), name in zip(aps, settings):
+        plt.figure(figsize=(6, 4))
+        plt.semilogx(FDPI, DR, linewidth=2)
+        plt.grid(True, linestyle='--', alpha=.6)
+        plt.xlabel('False Detections per Image')
+        plt.ylabel('Detection Rate')
+        plt.title(f'F-ROC ({name.capitalize()})')
+        plt.ylim(0, 1)
+        plt.tight_layout()
+        plt.savefig(f'froc_{name}.png', dpi=300)
+        plt.close()
 
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('-p', '--pred', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-06-09_CROSSATTENTION_FROMUPPERANDLOWER_PYRAMIDIAL_POSBIAS_MOREEPOCHS/like-mxnet/')
+    parser.add_argument('-p', '--pred', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-06-03_NEIGHBOURHOOD/like-mxnet/')
     parser.add_argument('-g', '--gt', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/widerface_evaluate/ground_truth')
     #parser.add_argument('-i', '--iter', default='140')
     #parser.add_argument('-d', '--det_result_txt', default=None)
 
     args = parser.parse_args()
-
     main(args.pred, args.gt)

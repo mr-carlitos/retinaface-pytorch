@@ -3,7 +3,7 @@
 from data.config_transform import NeckMode, PositionalMode
 
 cfg_re50 = {
-    'name': 'CROSSATTENTION_FROMUPPERANDLOWER_PYRAMIDIAL',
+    'name': 'GroupNorm',
     'backbone_name': 'Resnet50-11k',
     'featuremaps_at_end_of_stage': False,
     #This means that for each feature map (corresponding to a particular scale), three square anchors are generated—one with a smaller size and one with a larger size.
@@ -20,16 +20,17 @@ cfg_re50 = {
     'neck_mode': NeckMode.CROSSATTENTION,
     'shared_ssh': False,
 
-    #-----FOR CROSS ATTENTION------
-    'residualconn' : False,
-    'groupnorm' : False,
+    # -----FOR CROSS ATTENTION------
+    'residualconn': False,
+    'groupnorm': False,
     'query_focused_residualconn': False,
-    'pos_embedding': PositionalMode.POS_ENCODING,
-    'apply_convblock': True,
+    'pos_embedding': PositionalMode.NOTHING,
+    'apply_convblock': False,
     'attention_heads': 4,
     'upperandlower': True,  # True = UPPERANDLOWER, False = ONLYUPPER
-    'pyramidial': True,     #True = Pyramidial, False= Horizontal
-    #------ END ---------
+    'pyramidial': True,  # True = Pyramidial, False= Horizontal
+    'use_W^O': False,
+    # ------ END ---------
 
     #For P6 to work, the 'return_layers' attribute must contain '3' in the list.
     'introduce_P6': True,

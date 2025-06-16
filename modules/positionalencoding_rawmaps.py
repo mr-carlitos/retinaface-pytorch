@@ -1,6 +1,5 @@
 import torch
 import math
-from math import ceil
 import torch.nn as nn
 
 class FixedSinePositionalEncoding(nn.Module):

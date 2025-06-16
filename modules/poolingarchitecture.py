@@ -1,6 +1,6 @@
 ##### CARLOS CODE FILE ########
 from data import NeckMode
-from models.net import conv_bn1X1, conv_bn
+from modules.net import conv_bn1X1, conv_bn
 import torch.nn as nn
 
 def deconv_bn_relu(inp, oup, leaky = 0):
