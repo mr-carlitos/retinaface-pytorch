@@ -435,6 +435,23 @@ def evaluation_ap50(pred, gt_path):
         ap = voc_ap(recall, propose)
         aps.append(ap)
 
+        import matplotlib.pyplot as plt
+
+        # Plot PR curve for current setting
+        plt.figure(figsize=(8, 6))
+        plt.plot(recall, propose, linewidth=2, label=f'{settings[setting_id].capitalize()} (AP={ap:.3f})')
+        plt.xlabel('Recall')
+        plt.ylabel('Precision')
+        plt.title(f'Precision-Recall Curve - {settings[setting_id].capitalize()}')
+        plt.grid(True, alpha=0.3)
+        plt.legend()
+        plt.xlim([0, 1])
+        plt.ylim([0, 1])
+
+        # Save individual PR curve
+        plt.savefig(f'pr_curve_old_{settings[setting_id]}.png', dpi=300, bbox_inches='tight')
+        plt.close()
+
     print("==================== Results ====================")
     print("Easy   Val AP: {}".format(aps[0]))
     print("Medium Val AP: {}".format(aps[1]))
@@ -444,7 +461,7 @@ def evaluation_ap50(pred, gt_path):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-p', '--pred', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-06-09_CROSSATTENTION_FROMUPPERANDLOWER_PYRAMIDIAL_POSBIAS_MOREEPOCHS/like-mxnet/')
+    parser.add_argument('-p', '--pred', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/baseline/Baseline_withFPN/like-mxnet/')
     parser.add_argument('-g', '--gt', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/widerface_evaluate/ground_truth')
     #parser.add_argument('-i', '--iter', default='140')
     #parser.add_argument('-d', '--det_result_txt', default=None)

@@ -44,7 +44,7 @@ class RetinaFace(nn.Module):
         super(RetinaFace,self).__init__()
         self.cfg = cfg
         self.phase = phase
-        self.shared_ssh = cfg['shared_ssh']
+        self.shared_losshead = cfg['shared_losshead']
         # in_channel = 256
         in_channels_stage = cfg['in_channel']
 
@@ -131,14 +131,9 @@ class RetinaFace(nn.Module):
             for layer_index in range(len(self.cfg['return_layers'])):
                 self.conv1x1list.append(conv_bn1X1(in_channels_list[layer_index], out_channels_fpn, stride = 1))
 
-        if self.shared_ssh:
-            self.shared_ssh_module = SSH(out_channels_fpn, out_channels_fpn)
-
-        else:
-            self.context_modules_list = nn.ModuleList()
-
-            for num_featuremap in range(number_of_featuremaps):
-                self.context_modules_list.append(SSH(out_channels_fpn, out_channels_fpn))
+        self.context_modules_list = nn.ModuleList()
+        for num_featuremap in range(number_of_featuremaps):
+            self.context_modules_list.append(SSH(out_channels_fpn, out_channels_fpn))
 
         anchor_num = cfg['anchor_num']
 
@@ -149,15 +144,21 @@ class RetinaFace(nn.Module):
         ##### CARLOS CODE ENDS HERE #######################
 
     def _make_class_head(self, fpn_num, inchannels, anchor_num):
-        classhead = nn.ModuleList()
-        for i in range(fpn_num):
-            classhead.append(ClassHead(inchannels, anchor_num))
+        if self.shared_losshead:
+            classhead = ClassHead(inchannels, anchor_num)
+        else:
+            classhead = nn.ModuleList()
+            for i in range(fpn_num):
+                classhead.append(ClassHead(inchannels, anchor_num))
         return classhead
     
     def _make_bbox_head(self, fpn_num, inchannels, anchor_num):
-        bboxhead = nn.ModuleList()
-        for i in range(fpn_num):
-            bboxhead.append(BboxHead(inchannels, anchor_num))
+        if self.shared_losshead:
+            bboxhead = BboxHead(inchannels, anchor_num)
+        else:
+            bboxhead = nn.ModuleList()
+            for i in range(fpn_num):
+                bboxhead.append(BboxHead(inchannels, anchor_num))
         return bboxhead
 
     def forward(self,x):
@@ -207,8 +208,12 @@ class RetinaFace(nn.Module):
                 i += 1
 
         ##### CARLOS CODE ENDS HERE #######################
-        bbox_regressions = torch.cat([self.BboxHead[i](feature) for i, feature in enumerate(x)], dim=1)
-        classifications = torch.cat([self.ClassHead[i](feature) for i, feature in enumerate(x)],dim=1)
+        if self.shared_losshead:
+            bbox_regressions = torch.cat([self.BboxHead(feature) for feature in x], dim=1)
+            classifications = torch.cat([self.ClassHead(feature) for feature in x], dim=1)
+        else:
+            bbox_regressions = torch.cat([self.BboxHead[i](feature) for i, feature in enumerate(x)], dim=1)
+            classifications = torch.cat([self.ClassHead[i](feature) for i, feature in enumerate(x)], dim=1)
 
         if self.phase == 'train':
             x = (bbox_regressions, classifications)

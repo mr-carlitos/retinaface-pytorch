@@ -292,7 +292,7 @@ def voc_ap(rec, prec):
     # Each rectangle's width is the change in recall (mrec[i + 1] - mrec[i])
     # Each rectangle's height is the precision at that recall level (mpre[i + 1])
     ap = np_round(np.sum((mrec[i + 1] - mrec[i]) * mpre[i + 1]))
-    return ap
+    return ap, mrec, mpre
 
 
 def check_monotonicity(rec, prec):
@@ -411,7 +411,8 @@ def evaluation_ap50(pred, gt_path):
 
         recall = tp_cum / float(count_face)  # monotone :D
         precision = tp_cum / (tp_cum + fp_cum)  # will be envelope-corrected in voc_ap
-        ap = voc_ap(recall, precision)
+        ap, _, _ = voc_ap(recall, precision)
+        aps.append(ap)
         """
         import matplotlib.pyplot as plt
 
@@ -431,7 +432,7 @@ def evaluation_ap50(pred, gt_path):
         plt.close()
         """
 
-        aps.append(ap)
+
 
     print("==================== Results ====================")
     print("Easy   Val AP: {}".format(aps[0]))
@@ -439,14 +440,103 @@ def evaluation_ap50(pred, gt_path):
     print("Hard   Val AP: {}".format(aps[2]))
     print("=================================================")
 
+# Compute mean Average Precision (mAP)
+def compute_map(pred, gt_path):
+    pred = get_preds(pred)
+    pred = norm_score(pred)
+    facebox_list, event_list, file_list, hard_gt_list, _, _ = get_gt_boxes(gt_path)
+    event_num = len(event_list)
+
+    setting_gts = hard_gt_list
+    aps = []
+
+    for iou_th in np.arange(0.50, 1.00, 0.05):
+        # different setting
+        gt_list = setting_gts
+        count_face = 0
+        # pr_curve = np.zeros((thresh_num, 2)).astype('float')
+        pr_curve_list = []
+        # [hard, medium, easy]
+        pbar = tqdm.tqdm(range(event_num))
+
+        scores_buf = []  # list of 1-D arrays
+        tp_flags_buf = []  # list of 1-D uint8 arrays
+
+        # for each setting (e.g., Parade)
+        for i in pbar:
+            pbar.set_description(f"Hard @ IoU {iou_th:.2f}")
+            event_name = str(event_list[i][0][0])
+            img_list = file_list[i][0]
+            pred_list = pred[event_name]
+            sub_gt_list = gt_list[i][0]
+            gt_bbx_list = facebox_list[i][0]
+
+            # for each image in the current setting
+            for j in range(len(img_list)):
+                pred_info = pred_list[str(img_list[j][0][0])]
+
+                gt_boxes = gt_bbx_list[j][0].astype('float')
+                keep_index = sub_gt_list[j][0]
+                count_face += len(keep_index)
+
+                if len(gt_boxes) == 0 or len(pred_info) == 0:
+                    continue
+                ignore = np.zeros(gt_boxes.shape[0])
+                if len(keep_index) != 0:
+                    ignore[keep_index - 1] = 1
+                pred_info = np_round(pred_info, 1)
+                pred_sort_idx = np.argsort(pred_info[:, 4])
+                pred_info = pred_info[pred_sort_idx][::-1]
+
+                gt_boxes = np_round(gt_boxes)
+                ignore = np_round(ignore)
+                pred_recall, proposal_list = image_eval(pred_info, gt_boxes, ignore, iou_th)
+
+                # keep only the predictions that are to be evaluated
+                valid_mask = (proposal_list == 1)
+                if not np.any(valid_mask):
+                    continue  # nothing to record for this image
+
+                valid_scores = pred_info[valid_mask, 4]  # (K,)
+                valid_recall = pred_recall[valid_mask]  # (K,)
+
+                # a TP is the first time the per-image recall increases
+                tp_flags_img = np.empty_like(valid_recall, dtype=np.uint8)
+                tp_flags_img[0] = 1 if valid_recall[0] > 0 else 0
+                tp_flags_img[1:] = (np.diff(valid_recall) > 0).astype(np.uint8)
+
+                # accumulate
+                scores_buf.append(valid_scores)
+                tp_flags_buf.append(tp_flags_img)
+
+        # concatenate everything once
+        scores = np.concatenate(scores_buf, axis=0).astype(np.float32)
+        tp_flags = np.concatenate(tp_flags_buf, axis=0).astype(np.uint8)
+
+        # sort detections by confidence (high to low)
+        order = scores.argsort()[::-1]
+        tp_flags = tp_flags[order]
+
+        tp_cum = np.cumsum(tp_flags)  # true positives so far
+        fp_cum = np.arange(1, tp_flags.size + 1) - tp_cum  # false positives so far
+
+        recall = tp_cum / float(count_face)  # monotone :D
+        precision = tp_cum / (tp_cum + fp_cum)  # will be envelope-corrected in voc_ap
+        ap, _, _ = voc_ap(recall, precision)
+        aps.append(ap)
+
+    print("==================== Result mAP ====================")
+    print(np.mean(aps))
+    print("====================================================")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-p', '--pred', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-06-14_POSENC/like-mxnet/')
+    parser.add_argument('-p', '--pred', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/cross_pyra_up_low_variants/POSENC_RAW_FMAPS/like-mxnet/')
     parser.add_argument('-g', '--gt', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/widerface_evaluate/ground_truth')
     #parser.add_argument('-i', '--iter', default='140')
     #parser.add_argument('-d', '--det_result_txt', default=None)
 
     args = parser.parse_args()
-    #evaluation_ap50(args.pred, args.gt, args.iter, args.det_result_txt)
-    evaluation_ap50(args.pred, args.gt)
+
+    #evaluation_ap50(args.pred, args.gt)
+    compute_map(args.pred, args.gt)

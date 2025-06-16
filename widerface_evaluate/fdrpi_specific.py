@@ -254,14 +254,11 @@ def main(pred, gt_path):
         thresholds = np.unique(negatives) if len(negatives) > 0 else [0]
 
         # Sort arrays once
-        pos_sorted = np.sort(positives)[::-1]  # descending order
-        neg_sorted = np.sort(negatives)[::-1]  # descending order
+        pos_sorted = np.sort(positives) # descending order
+        neg_sorted = np.sort(negatives)  # descending order
 
-        # For each threshold, find how many scores are >= threshold
-        # searchsorted with 'right' side gives us the count
-        #TODO: Check if searchsorted is really ok to use here
-        pos_counts = len(pos_sorted) - np.searchsorted(pos_sorted[::-1], thresholds, side='right')
-        neg_counts = len(neg_sorted) - np.searchsorted(neg_sorted[::-1], thresholds, side='right')
+        pos_counts = len(pos_sorted) - np.searchsorted(pos_sorted, thresholds, side='left')
+        neg_counts = len(neg_sorted) - np.searchsorted(neg_sorted, thresholds, side='left')
 
         DR = pos_counts / float(count_face)
         FDPI = neg_counts / count_images
