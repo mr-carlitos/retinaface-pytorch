@@ -3,7 +3,7 @@
 from data.config_transform import NeckMode, PositionalMode
 
 cfg_re50 = {
-    'name': 'GroupNorm',
+    'name': 'OUTERRES',
     'backbone_name': 'Resnet50-11k',
     'featuremaps_at_end_of_stage': False,
     #This means that for each feature map (corresponding to a particular scale), three square anchors are generated—one with a smaller size and one with a larger size.
@@ -18,18 +18,17 @@ cfg_re50 = {
     # The variance list of parameters is in fact an abuse of terms. Instead it indicates and contains precomputed standard deviations of the landmark and bounding box targets. What the code is doing is some sort of ad-hoc normalization of the targets.
     'variance': [0.1, 0.2],
     'neck_mode': NeckMode.CROSSATTENTION,
+
+    #DONT FORGET to check this parameter
     'shared_losshead': False,
 
     # -----FOR CROSS ATTENTION------
-    'residualconn': False,
-    'groupnorm': False,
-    'query_focused_residualconn': False,
-    'pos_embedding': PositionalMode.NOTHING,
-    'apply_convblock': False,
+    'query_focused_residualconn': True,
+    'pos_embedding': PositionalMode.POS_EMBEDDING_QKV,
     'attention_heads': 4,
     'upperandlower': True,  # True = UPPERANDLOWER, False = ONLYUPPER
     'pyramidial': True,  # True = Pyramidial, False= Horizontal
-    'use_W^O': False,
+    'increase_receptive_field': True,
     # ------ END ---------
 
     #For P6 to work, the 'return_layers' attribute must contain '3' in the list.

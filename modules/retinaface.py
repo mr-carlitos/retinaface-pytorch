@@ -198,14 +198,10 @@ class RetinaFace(nn.Module):
         # Context Module (SSH): Can be shared or not shared
         x = list()
 
-        if self.shared_ssh:
-            for ii in intermediate:
-                x.append(self.shared_ssh_module(ii))
-        else:
-            i = 0
-            for context_module in self.context_modules_list:
-                x.append(context_module(intermediate[i]))
-                i += 1
+        i = 0
+        for context_module in self.context_modules_list:
+            x.append(context_module(intermediate[i]))
+            i += 1
 
         ##### CARLOS CODE ENDS HERE #######################
         if self.shared_losshead:

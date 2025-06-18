@@ -531,12 +531,12 @@ def compute_map(pred, gt_path):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-p', '--pred', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/cross_pyra_up_low_variants/POSENC_RAW_FMAPS/like-mxnet/')
+    parser.add_argument('-p', '--pred', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-06-17_SHAREDLOSSHEAD/like-mxnet/')
     parser.add_argument('-g', '--gt', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/widerface_evaluate/ground_truth')
     #parser.add_argument('-i', '--iter', default='140')
     #parser.add_argument('-d', '--det_result_txt', default=None)
 
     args = parser.parse_args()
 
-    #evaluation_ap50(args.pred, args.gt)
+    evaluation_ap50(args.pred, args.gt)
     compute_map(args.pred, args.gt)

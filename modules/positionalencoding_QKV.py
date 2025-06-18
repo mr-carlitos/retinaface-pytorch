@@ -1,3 +1,4 @@
+### CARLOS CODE FILE. Inspired by DETR: https://github.com/facebookresearch/detr/blob/main/models/position_encoding.py
 import torch
 import math
 import torch.nn as nn
@@ -7,21 +8,18 @@ class FixedSinePositionalEncodingQKV(nn.Module):
     """
     Resolution-agnostic 2-D sine/cos positional encoding for Q (2x2) and K/V(4x4) maps.
     """
-    def __init__(self, channels, temperature=10000):
+    def __init__(self, channels, height, width, temperature=10000):
         super().__init__()
         assert channels % 4 == 0, "channels must be divisible by 4"
         self.channels = channels
         self.temperature = temperature
+        self.height = height
+        self.width = width
 
     def forward(self):
-        posenc_q = self.compute_posenc(2,2)
-        posenc_kv= self.compute_posenc(4,4)
+        pos_y = torch.arange(self.height).unsqueeze(1)     # (H,1)
+        pos_x = torch.arange(self.width).unsqueeze(1)     # (W,1)
 
-        return (posenc_q, posenc_kv)
-
-    def compute_posenc(self, H, W):
-        pos_y = torch.arange(H).unsqueeze(1)     # (H,1)
-        pos_x = torch.arange(W).unsqueeze(1)     # (W,1)
         div_term = torch.exp(
             torch.arange(0, self.channels // 2, 2) *
             (-math.log(self.temperature) / (self.channels // 2))
@@ -30,9 +28,45 @@ class FixedSinePositionalEncodingQKV(nn.Module):
         pos_x = pos_x * div_term                                # (W,C/4)
         pos_y = torch.stack((pos_y.sin(), pos_y.cos()), dim=2).flatten(1)  # (H, C/2)
         pos_x = torch.stack((pos_x.sin(), pos_x.cos()), dim=2).flatten(1)  # (W, C/2)
-        pe = torch.cat((
-            pos_y.unsqueeze(0).expand(W,-1,-1).transpose(0,1),
-            pos_x.unsqueeze(0).expand(H,-1,-1)
-        ), dim=2).contiguous()
+
+        pos_y = pos_y[:, None, :].expand(-1, self.width, -1)
+        pos_x = pos_x[None, :, :].expand(self.height, -1, -1)
+        pe = torch.cat((pos_y, pos_x), dim=-1).contiguous()  # (H, W, C)
+        print(pe)
 
         return pe #(H,W,C)
+
+class LearnedPositionalEncodingQKV(nn.Module):
+    """
+    Resolution-aware but *learned* 2-D positional encoding for
+    Q and K/V  feature maps."""
+
+    def __init__(self, channels, height, width):
+        super().__init__()
+        assert channels % 2 == 0, "channels must be even (half for rows, half for cols)"
+        self.channels = channels
+
+        self.height = height
+        self.width = width
+        # Learned lookup tables
+        self.row_embed = nn.Embedding(height, channels // 2)
+        self.col_embed = nn.Embedding(width,  channels // 2)
+
+    def forward(self):
+
+        device = self.row_embed.weight.device
+
+        # Indices for this spatial size
+        rows = torch.arange(self.height, device=device)           # (H,)
+        cols = torch.arange(self.width, device=device)           # (W,)
+
+        # Look them up
+        row_feat = self.row_embed(rows)                 # (H, C/2)
+        col_feat = self.col_embed(cols)                 # (W, C/2)
+
+        # Broadcast to an (H, W, C/2) grid and concatenate
+        pos_y = row_feat[:, None, :].expand(-1, self.width, -1)  # (H, W, C/2)
+        pos_x = col_feat[None, :, :].expand(self.height, -1, -1)  # (H, W, C/2)
+
+        pe = torch.cat((pos_x, pos_y), dim=-1).contiguous()  # (H, W, C)
+        return pe

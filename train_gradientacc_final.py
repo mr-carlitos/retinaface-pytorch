@@ -28,9 +28,9 @@ def get_args():
     parser.add_argument('--momentum', default=0.9, type=float, help='momentum')
     parser.add_argument('--weight_decay', default=5e-4, type=float, help='Weight decay for SGD')
     parser.add_argument('--gamma', default=0.1, type=float, help='Gamma update for SGD')
-    parser.add_argument('--save_folder', default='./save-checkpoints/2025-06-16_GROUPNORM/', help='Location to save checkpoint models')
+    parser.add_argument('--save_folder', default='./save-checkpoints/2025-06-18_FULL/', help='Location to save checkpoint models')
 
-    parser.add_argument('--batch_size', default=14, type=int, help='Location to save checkpoint models')
+    parser.add_argument('--batch_size', default=9, type=int, help='Location to save checkpoint models')
     parser.add_argument('--epoch', default=80, type=int, help='Location to save checkpoint models')
     parser.add_argument('--decay1', default=55, type=int, help='Location to save checkpoint models')
     parser.add_argument('--decay2', default=68, type=int, help='Location to save checkpoint models')
