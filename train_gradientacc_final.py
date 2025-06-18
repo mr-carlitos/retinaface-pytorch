@@ -30,7 +30,7 @@ def get_args():
     parser.add_argument('--gamma', default=0.1, type=float, help='Gamma update for SGD')
     parser.add_argument('--save_folder', default='./save-checkpoints/2025-06-18_FULL/', help='Location to save checkpoint models')
 
-    parser.add_argument('--batch_size', default=9, type=int, help='Location to save checkpoint models')
+    parser.add_argument('--batch_size', default=14, type=int, help='Location to save checkpoint models')
     parser.add_argument('--epoch', default=80, type=int, help='Location to save checkpoint models')
     parser.add_argument('--decay1', default=55, type=int, help='Location to save checkpoint models')
     parser.add_argument('--decay2', default=68, type=int, help='Location to save checkpoint models')
