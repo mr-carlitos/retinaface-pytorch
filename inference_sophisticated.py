@@ -13,15 +13,15 @@ from data import cfg_re50
 from layers.functions.prior_box import PriorBox
 from utils.box_voting import bbox_vote
 import cv2
-from models.retinaface import RetinaFace
+from modules.retinaface import RetinaFace
 from utils.box_utils import decode, clip_boxes
 
 
 parser = argparse.ArgumentParser(description='Retinaface')
 
-parser.add_argument('-m', '--trained_model', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-06-02_CROSSATTENTION_FROMUPPERANDLOWER_PYRAMIDIAL_POSITIONALENC/CROSSATTENTION_FROMUPPERANDLOWER_PYRAMIDIAL_final.pth',
+parser.add_argument('-m', '--trained_model', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-06-18_FULL/FULL_final.pth',
                     type=str, help='Trained state_dict file path to open')
-parser.add_argument('--cpu', action="store_true", default=False, help='Use cpu inference')
+parser.add_argument('--cpu', action="store_true", default=True, help='Use cpu inference')
 parser.add_argument('--confidence_threshold', default=0.02, type=float, help='confidence_threshold')
 parser.add_argument('--top_k', default=5000, type=int, help='top_k')
 parser.add_argument('--nms_threshold', default=0.4, type=float, help='nms_threshold')
@@ -93,8 +93,8 @@ if __name__ == '__main__':
     do_flip = args.flipping  # Enable horizontal flip.
     max_size = 2150  # Maximum allowed size for the longer side.
 
-    image_name = "7_Cheering_Cheering_7_50"
-    #image_name = "0_Parade_marchingband_1_379"
+    #image_name = "7_Cheering_Cheering_7_50"
+    image_name = "0_Parade_marchingband_1_379"
     image_path = "./example-pictures/input/"+image_name+".jpg"
     img_raw = cv2.imread(image_path, cv2.IMREAD_COLOR)
 

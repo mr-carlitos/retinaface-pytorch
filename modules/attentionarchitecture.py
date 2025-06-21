@@ -26,7 +26,6 @@ class AttentionArchitecture(nn.Module):
 
         if self.increase_receptive_field:
             self.base_number = 2
-
         else:
             self.base_number = 1
 
@@ -89,6 +88,7 @@ class AttentionArchitecture(nn.Module):
             else:
                 self.register_buffer("embed_q",FixedSinePositionalEncodingQKV(self.head_dim, 2, 2).forward())
                 self.register_buffer("embed_lower",FixedSinePositionalEncodingQKV(self.head_dim, 4, 4).forward())
+
         self.merge_list = nn.ModuleList()
         for _ in in_channels_list[:-1]:
             self.merge_list.append(conv_bn(out_channels, out_channels, leaky=leaky))
@@ -114,6 +114,15 @@ class AttentionArchitecture(nn.Module):
             return x, orig_sizes
 
         # Preprocessing: Bottom-up pad/crop so that each query is exactly 2× its next key (Especially necessary at Inference / Evaluation time!)
+        div = self.base_number  # 1 or 2
+        top = x[-1]
+        _, _, H, W = top.shape
+        pad_h = (div - H % div) % div
+        pad_w = (div - W % div) % div
+        if pad_h or pad_w:
+            top = F.pad(top, (0, pad_w, 0, pad_h), mode='replicate')
+        x[-1] = top
+
         for i in range(self.num_levels - 2, -1, -1):
             q = x[i]  # e.g. C2, C3, C4, C5 in turn
             k = x[i + 1]  # the immediately finer map (C3, C4, C5)

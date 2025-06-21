@@ -3,7 +3,6 @@ import torch
 import math
 import torch.nn as nn
 
-
 class FixedSinePositionalEncodingQKV(nn.Module):
     """
     Resolution-agnostic 2-D sine/cos positional encoding for Q (2x2) and K/V(4x4) maps.
