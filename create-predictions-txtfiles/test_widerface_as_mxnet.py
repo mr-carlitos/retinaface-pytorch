@@ -19,9 +19,9 @@ from utils.box_utils import decode, clip_boxes
 from utils.timer import Timer
 
 parser = argparse.ArgumentParser(description='Retinaface')
-parser.add_argument('-m', '--trained_model', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-06-18_FULL/FULL_final.pth',
+parser.add_argument('-m', '--trained_model', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-06-22_NOPOSENC/NOPOSENC_final.pth',
                     type=str, help='Trained state_dict file path to open')
-parser.add_argument('--save_folder', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-06-18_FULL/like-mxnet/', type=str, help='Dir to save txt results')
+parser.add_argument('--save_folder', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-06-22_NOPOSENC/like-mxnet/', type=str, help='Dir to save txt results')
 parser.add_argument('--origin_size', default=False, type=bool, help='Whether use origin image size to evaluate')
 parser.add_argument('--cpu', action="store_true", default=False, help='Use cpu inference')
 parser.add_argument('--images_folder', default='/local/scratch/datasets/WiderFace/WIDER_val/images/', type=str, help='image dataset path')
@@ -72,7 +72,7 @@ def load_model(model, pretrained_path, load_to_cpu):
 
 
 if __name__ == '__main__':
-    torch.cuda.set_device(0)
+    torch.cuda.set_device(5)
     torch.set_grad_enabled(False)
 
     cfg = cfg_re50

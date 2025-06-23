@@ -82,12 +82,12 @@ class AttentionArchitecture(nn.Module):
         elif self.position_awareness == PositionalMode.POS_ENCODING_QKV:
             self.posembed = True
             if self.increase_receptive_field:
-                self.register_buffer("embed_upper",FixedSinePositionalEncodingQKV(self.head_dim, 2, 2).forward())
-                self.register_buffer("embed_q", FixedSinePositionalEncodingQKV(self.head_dim, 4, 4).forward())
-                self.register_buffer("embed_lower",FixedSinePositionalEncodingQKV(self.head_dim, 8, 8).forward())
+                self.embed_upper = FixedSinePositionalEncodingQKV(self.head_dim, 2, 2)
+                self.embed_q = FixedSinePositionalEncodingQKV(self.head_dim, 4, 4)
+                self.embed_lower = FixedSinePositionalEncodingQKV(self.head_dim, 8, 8)
             else:
-                self.register_buffer("embed_q",FixedSinePositionalEncodingQKV(self.head_dim, 2, 2).forward())
-                self.register_buffer("embed_lower",FixedSinePositionalEncodingQKV(self.head_dim, 4, 4).forward())
+                self.embed_q = FixedSinePositionalEncodingQKV(self.head_dim, 2, 2)
+                self.embed_lower = FixedSinePositionalEncodingQKV(self.head_dim, 4, 4)
 
         self.merge_list = nn.ModuleList()
         for _ in in_channels_list[:-1]:
@@ -250,10 +250,7 @@ class AttentionArchitecture(nn.Module):
 
             if self.posembed:
                 Q_grouped = Q_grouped.view(batch, int(Number_in_upper_keylayer/self.quadratic_base), 2*self.base_number , 2*self.base_number , self.n_heads, self.head_dim)
-                if self.position_awareness == PositionalMode.POS_ENCODING_QKV:
-                    q_pos_enc = self.embed_q.to(device).unsqueeze(0).unsqueeze(0).unsqueeze(4).expand(batch, int(Number_in_upper_keylayer/self.quadratic_base),-1, -1, self.n_heads,-1)
-                else:
-                    q_pos_enc = self.embed_q().to(device).unsqueeze(0).unsqueeze(0).unsqueeze(4).expand(batch,
+                q_pos_enc = self.embed_q().to(device).unsqueeze(0).unsqueeze(0).unsqueeze(4).expand(batch,
                                                                                            int(Number_in_upper_keylayer / self.quadratic_base),
                                                                                            -1, -1, self.n_heads, -1)
                 Q_grouped = Q_grouped + q_pos_enc
@@ -279,13 +276,7 @@ class AttentionArchitecture(nn.Module):
                     K_grouped = K_grouped.view(batch, int(Number_in_upper_keylayer / self.quadratic_base),
                                                            self.base_number, self.base_number, self.n_heads,
                                                            self.head_dim)
-                    if self.position_awareness == PositionalMode.POS_ENCODING_QKV:
-                        kv_pos_enc = self.embed_upper.to(device).unsqueeze(0).unsqueeze(0).unsqueeze(4).expand(batch,
-                                                                                                int(Number_in_upper_keylayer / self.quadratic_base),
-                                                                                                -1, -1, self.n_heads,
-                                                                                                -1)
-                    else:
-                        kv_pos_enc = self.embed_upper().to(device).unsqueeze(0).unsqueeze(0).unsqueeze(4).expand(batch,
+                    kv_pos_enc = self.embed_upper().to(device).unsqueeze(0).unsqueeze(0).unsqueeze(4).expand(batch,
                                                                                                 int(Number_in_upper_keylayer / self.quadratic_base),
                                                                                                 -1, -1, self.n_heads,
                                                                                                 -1)
@@ -315,13 +306,7 @@ class AttentionArchitecture(nn.Module):
 
                     if self.posembed:
                         K_lower_grouped = K_lower_grouped.view(batch, int(Number_in_upper_keylayer/self.quadratic_base), 4*self.base_number,4*self.base_number , self.n_heads, self.head_dim)
-                        if self.position_awareness == PositionalMode.POS_ENCODING_QKV:
-                            kv_pos_enc = self.embed_lower.to(device).unsqueeze(0).unsqueeze(0).unsqueeze(4).expand(batch,
-                                                                                                  int(Number_in_upper_keylayer/self.quadratic_base),
-                                                                                                  -1, -1, self.n_heads,
-                                                                                                  -1)
-                        else:
-                            kv_pos_enc = self.embed_lower().to(device).unsqueeze(0).unsqueeze(0).unsqueeze(4).expand(batch,
+                        kv_pos_enc = self.embed_lower().to(device).unsqueeze(0).unsqueeze(0).unsqueeze(4).expand(batch,
                                                                                                     int(Number_in_upper_keylayer / self.quadratic_base),
                                                                                                     -1, -1,
                                                                                                     self.n_heads,

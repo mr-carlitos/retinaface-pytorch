@@ -3,7 +3,7 @@
 from data.config_transform import NeckMode, PositionalMode
 
 cfg_re50 = {
-    'name': 'SMALL_RECEPTIVE',
+    'name': 'NO_QRES',
     'backbone_name': 'Resnet50-11k',
     'featuremaps_at_end_of_stage': False,
     #This means that for each feature map (corresponding to a particular scale), three square anchors are generated—one with a smaller size and one with a larger size.
@@ -23,12 +23,12 @@ cfg_re50 = {
     'shared_losshead': False,
 
     # -----FOR CROSS ATTENTION------
-    'query_focused_residualconn': True,
+    'query_focused_residualconn': False,
     'pos_embedding': PositionalMode.POS_EMBEDDING_QKV,
     'attention_heads': 4,
     'upperandlower': True,  # True = UPPERANDLOWER, False = ONLYUPPER
     'pyramidial': True,  # True = Pyramidial, False= Horizontal
-    'increase_receptive_field': False,
+    'increase_receptive_field': True,
     # ------ END ---------
 
     #For P6 to work, the 'return_layers' attribute must contain '3' in the list.

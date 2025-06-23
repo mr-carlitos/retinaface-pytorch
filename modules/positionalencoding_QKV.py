@@ -5,7 +5,7 @@ import torch.nn as nn
 
 class FixedSinePositionalEncodingQKV(nn.Module):
     """
-    Resolution-agnostic 2-D sine/cos positional encoding for Q (2x2) and K/V(4x4) maps.
+    Resolution-agnostic 2-D sine/cos positional encoding for Q and K/V maps.
     """
     def __init__(self, channels, height, width, temperature=10000):
         super().__init__()
@@ -15,23 +15,24 @@ class FixedSinePositionalEncodingQKV(nn.Module):
         self.height = height
         self.width = width
 
-    def forward(self):
-        pos_y = torch.arange(self.height).unsqueeze(1)     # (H,1)
-        pos_x = torch.arange(self.width).unsqueeze(1)     # (W,1)
-
-        div_term = torch.exp(
+        self.div_term = torch.exp(
             torch.arange(0, self.channels // 2, 2) *
             (-math.log(self.temperature) / (self.channels // 2))
-        )                                                   # (C/4,)
-        pos_y = pos_y * div_term                                # (H,C/4)
-        pos_x = pos_x * div_term                                # (W,C/4)
+        )
+
+    def forward(self):
+        device = self.div_term.device
+        pos_y = torch.arange(self.height, device = device).unsqueeze(1)     # (H,1)
+        pos_x = torch.arange(self.width, device = device).unsqueeze(1)     # (W,1)
+                                     # (C/4,)
+        pos_y = pos_y * self.div_term                                # (H,C/4)
+        pos_x = pos_x * self.div_term                                # (W,C/4)
         pos_y = torch.stack((pos_y.sin(), pos_y.cos()), dim=2).flatten(1)  # (H, C/2)
         pos_x = torch.stack((pos_x.sin(), pos_x.cos()), dim=2).flatten(1)  # (W, C/2)
 
         pos_y = pos_y[:, None, :].expand(-1, self.width, -1)
         pos_x = pos_x[None, :, :].expand(self.height, -1, -1)
         pe = torch.cat((pos_y, pos_x), dim=-1).contiguous()  # (H, W, C)
-        print(pe)
 
         return pe #(H,W,C)
 

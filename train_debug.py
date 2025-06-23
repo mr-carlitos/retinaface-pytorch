@@ -35,7 +35,7 @@ parser.add_argument('--image_size', default=640, type=int, help='Location to sav
 parser.add_argument('--gpu_train', default=True, type=bool, help='Location to save checkpoint models')
 
 args = parser.parse_args()
-device = 1
+device = 2
 args.device = device
 torch.cuda.set_device(device)
 

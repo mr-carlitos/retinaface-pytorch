@@ -531,7 +531,7 @@ def compute_map(pred, gt_path):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-p', '--pred', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-06-18_FULL/like-mxnet/')
+    parser.add_argument('-p', '--pred', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-06-22_NOPOSENC/like-mxnet/')
     parser.add_argument('-g', '--gt', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/widerface_evaluate/ground_truth')
     #parser.add_argument('-i', '--iter', default='140')
     #parser.add_argument('-d', '--det_result_txt', default=None)
