@@ -171,8 +171,6 @@ class AttentionArchitecture(nn.Module):
         v_c = torch.arange(int(W_keylayer/self.base_number), device=device).unsqueeze(0).expand(int(H_keylayer/self.base_number), int(W_keylayer/self.base_number)).reshape(-1)
         base = 2 * self.base_number * u_c * W_querylayer + 2 * self.base_number * v_c  # (Nc,)
 
-        #offs = torch.tensor([0, 1, W_querylayer, W_querylayer + 1], device=device)  # 4 offsets
-
         offs_q = torch.tensor(
             [ii + jj * W_querylayer for jj in range(2*self.base_number) for ii in range(2*self.base_number)],
             device=device
@@ -229,7 +227,7 @@ class AttentionArchitecture(nn.Module):
                 K_upper = K_list_upper[i]  # (B, Nc, d)
                 V_upper = V_list_upper[i]  # (B, Nc, d)
 
-            # ── [MHA] split into h heads ──────────────────────────────
+            #[MHA] split into h heads
             Q = Q.view(*Q.shape[:-1], self.n_heads, self.head_dim)  # (B,N,h,d_h)  # [MHA]
             K_upper = K_upper.view(*K_upper.shape[:-1], self.n_heads, self.head_dim)  # [MHA]
             V_upper = V_upper.view(*V_upper.shape[:-1], self.n_heads, self.head_dim)  # [MHA]
@@ -260,7 +258,7 @@ class AttentionArchitecture(nn.Module):
             if self.increase_receptive_field:
                 H_upper, W_upper = x[i + 1].shape[2:]
                 base_lo = (self.base_number * u) * W_upper + (self.base_number * v)
-                # Create neighborhood offsets for lower resolution keys
+                # Create neighborhood offsets for upper keys
                 offs_up = torch.tensor(
                     [ii + jj * W_upper for jj in range(self.base_number) for ii in range(self.base_number)],
                     device=device
@@ -325,7 +323,7 @@ class AttentionArchitecture(nn.Module):
             scores = torch.einsum('bnqhd,bnkhd->bnqkh', Q_grouped, K_grouped)  # (B, Nk, 4, K, h)
             scores = scores / math.sqrt(self.head_dim)
 
-            if (self.upperandlower and i>0) or (self.upperandlower and self.increase_receptive_field):
+            if (self.upperandlower and i>0) or (self.increase_receptive_field):
                 attn = F.softmax(scores, dim=3)
             else:
                 attn = F.softmax(scores, dim=2)

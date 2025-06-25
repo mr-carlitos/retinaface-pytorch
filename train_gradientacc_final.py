@@ -5,7 +5,7 @@ import torch.optim as optim
 import argparse
 import torch.utils.data as data
 from data import WiderFaceDetection, detection_collate, preproc, cfg_re50
-from layers.modules import MultiTaskLossWithOHEM, MultiTaskLossWithFocalLoss
+from layers.modules import MultiTaskLossWithFocalLoss
 from layers.functions.prior_box import PriorBox
 import time
 import datetime
@@ -28,7 +28,7 @@ def get_args():
     parser.add_argument('--momentum', default=0.9, type=float, help='momentum')
     parser.add_argument('--weight_decay', default=5e-4, type=float, help='Weight decay for SGD')
     parser.add_argument('--gamma', default=0.1, type=float, help='Gamma update for SGD')
-    parser.add_argument('--save_folder', default='./save-checkpoints/2025-06-23_NO_QRES/', help='Location to save checkpoint models')
+    parser.add_argument('--save_folder', default='./save-checkpoints/2025-06-25_UPPER/', help='Location to save checkpoint models')
 
     parser.add_argument('--batch_size', default=14, type=int, help='Location to save checkpoint models')
     parser.add_argument('--epoch', default=80, type=int, help='Location to save checkpoint models')

@@ -1,3 +1,4 @@
+#CARLOS CODE FILE: MODIFIED THE ORIGINAL retinaface.py FILE SO THAT MY MODULES FIT IN
 import torch
 import torch.nn as nn
 import torchvision.models._utils as _utils
@@ -48,7 +49,6 @@ class RetinaFace(nn.Module):
         # in_channel = 256
         in_channels_stage = cfg['in_channel']
 
-        ##### CARLOS CODE STARTS HERE #######################
         number_of_featuremaps = len(self.cfg['return_layers'])
         return_layers_sorted = sorted(self.cfg['return_layers'])
 
@@ -90,7 +90,7 @@ class RetinaFace(nn.Module):
             import torchvision.models as models
             resnet_pytorched_backbone = models.resnet50(pretrained=True)
             print("Loaded ResNet50-1k as backbone :)")
-            #self.body -> First layer type where the inputs get fed through. It uses the backbone. 'return_layers': {'layer2': 1, 'layer3': 2, 'layer4': 3}.
+
             layer_dict = transform_layer_config(return_layers_sorted)
             self.backbone = _utils.IntermediateLayerGetter(resnet_pytorched_backbone, layer_dict)
 
@@ -141,7 +141,6 @@ class RetinaFace(nn.Module):
         self.BboxHead = self._make_bbox_head(fpn_num=number_of_featuremaps, inchannels=out_channels_fpn, anchor_num=anchor_num)
 
         self.feature_P6 = None
-        ##### CARLOS CODE ENDS HERE #######################
 
     def _make_class_head(self, fpn_num, inchannels, anchor_num):
         if self.shared_losshead:
@@ -162,7 +161,6 @@ class RetinaFace(nn.Module):
         return bboxhead
 
     def forward(self,x):
-        ##### CARLOS CODE STARTS HERE #######################
         if self.cfg['backbone_name'] == 'Resnet50-11k':
             out_raw = self.backbone.orchestrate(x, self.cfg['featuremaps_at_end_of_stage'])
             indices = sorted(self.cfg['return_layers'].copy())
@@ -203,7 +201,6 @@ class RetinaFace(nn.Module):
             x.append(context_module(intermediate[i]))
             i += 1
 
-        ##### CARLOS CODE ENDS HERE #######################
         if self.shared_losshead:
             bbox_regressions = torch.cat([self.BboxHead(feature) for feature in x], dim=1)
             classifications = torch.cat([self.ClassHead(feature) for feature in x], dim=1)
@@ -219,7 +216,6 @@ class RetinaFace(nn.Module):
         self.feature_P6 = None
         return x
 
-    ##### CARLOS CODE STARTS HERE #######################
     def create_P6(self):
         # Assuming C5 features have in_channels = cfg['in_channel'] * 8 = 2048
         in_channels_C5 = self.cfg['in_channel'] * 8
@@ -230,4 +226,3 @@ class RetinaFace(nn.Module):
         if P6.bias is not None:
             nn.init.constant_(P6.bias, 0)
         return P6
-    ##### CARLOS CODE ENDS HERE #######################
