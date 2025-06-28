@@ -2,10 +2,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.autograd import Variable
 from utils.box_utils import match_ohem, log_sum_exp
-from data import cfg_re50
-
 class MultiTaskLossWithOHEM(nn.Module):
     """SSD Weighted Loss Function
     Compute Targets:

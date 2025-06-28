@@ -21,6 +21,8 @@ class NeckMode(Enum):
 
     CROSSATTENTION = auto()
 
+    DIRECT_CROSSATTENTION = auto()
+
 
 class PositionalMode(Enum):
     POS_EMBEDDING_QKV = auto()

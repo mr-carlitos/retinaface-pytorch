@@ -12,6 +12,7 @@ from modules.net import FPN as FPN
 from modules.net import SSH as SSH
 from modules.poolingarchitecture import PoolingArchitecture
 from modules.attentionarchitecture import AttentionArchitecture
+from modules.directinteraction_attentionarchitecture import DirectAttentionArchitecture
 
 class ClassHead(nn.Module):
     def __init__(self, inchannels, num_anchors):
@@ -125,6 +126,9 @@ class RetinaFace(nn.Module):
             in_channels_list.append(in_channels_stage)
             self.p6_in_neck = True
             self.neck = AttentionArchitecture(in_channels_list, out_channels_fpn, self.phase, cfg)
+
+        elif cfg['neck_mode'] == NeckMode.DIRECT_CROSSATTENTION:
+            self.neck = DirectAttentionArchitecture(in_channels_list, out_channels_fpn, self.phase, cfg)
 
         else:
             self.conv1x1list = nn.ModuleList()

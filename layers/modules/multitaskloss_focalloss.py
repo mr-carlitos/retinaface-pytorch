@@ -4,8 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from utils.box_utils import match_focal_loss, log_sum_exp
-from data import cfg_re50
+from utils.box_utils import match_focal_loss
 from torchvision.ops import sigmoid_focal_loss
 
 class MultiTaskLossWithFocalLoss(nn.Module):

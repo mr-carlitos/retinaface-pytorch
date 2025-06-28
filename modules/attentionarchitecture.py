@@ -74,20 +74,24 @@ class AttentionArchitecture(nn.Module):
             if self.increase_receptive_field:
                 self.embed_upper = LearnedPositionalEncodingQKV(self.head_dim, 2,2)
                 self.embed_q = LearnedPositionalEncodingQKV(self.head_dim, 4,4)
-                self.embed_lower = LearnedPositionalEncodingQKV(self.head_dim, 8, 8)
+                if self.upperandlower:
+                    self.embed_lower = LearnedPositionalEncodingQKV(self.head_dim, 8, 8)
             else:
                 self.embed_q = LearnedPositionalEncodingQKV(self.head_dim, 2, 2)
-                self.embed_lower = LearnedPositionalEncodingQKV(self.head_dim, 4, 4)
+                if self.upperandlower:
+                    self.embed_lower = LearnedPositionalEncodingQKV(self.head_dim, 4, 4)
 
         elif self.position_awareness == PositionalMode.POS_ENCODING_QKV:
             self.posembed = True
             if self.increase_receptive_field:
                 self.embed_upper = FixedSinePositionalEncodingQKV(self.head_dim, 2, 2)
                 self.embed_q = FixedSinePositionalEncodingQKV(self.head_dim, 4, 4)
-                self.embed_lower = FixedSinePositionalEncodingQKV(self.head_dim, 8, 8)
+                if self.upperandlower:
+                    self.embed_lower = FixedSinePositionalEncodingQKV(self.head_dim, 8, 8)
             else:
                 self.embed_q = FixedSinePositionalEncodingQKV(self.head_dim, 2, 2)
-                self.embed_lower = FixedSinePositionalEncodingQKV(self.head_dim, 4, 4)
+                if self.upperandlower:
+                    self.embed_lower = FixedSinePositionalEncodingQKV(self.head_dim, 4, 4)
 
         self.merge_list = nn.ModuleList()
         for _ in in_channels_list[:-1]:
