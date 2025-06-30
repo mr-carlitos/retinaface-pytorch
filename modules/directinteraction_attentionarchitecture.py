@@ -22,6 +22,8 @@ class DirectAttentionArchitecture(nn.Module):
             "d_model must be divisible by n_heads"
         self.head_dim = d_model // self.n_heads
 
+        #self.upperandlower = cfg['upperandlower']
+
         # in_channels_list = [128,256,512,2048]
         self.num_levels = len(in_channels_list)
 
@@ -30,8 +32,11 @@ class DirectAttentionArchitecture(nn.Module):
 
         self.final_linear = nn.ModuleList([nn.Linear(d_model, d_model, bias=False) for _ in in_channels_list[1:]])
 
-        self.k_projs_upper = nn.ModuleList([nn.Linear(in_ch, d_model, bias=False) for in_ch in in_channels_list[1:]])
-        self.v_projs_upper = nn.ModuleList([nn.Linear(in_ch, d_model, bias=False) for in_ch in in_channels_list[1:]])
+        self.k_projs_upper = nn.ModuleList([nn.Linear(in_ch, d_model, bias=False) for in_ch in in_channels_list[1:-1]])
+        self.k_projs_upper.append(nn.Linear(d_model, d_model, bias = False))
+
+        self.v_projs_upper = nn.ModuleList([nn.Linear(in_ch, d_model, bias=False) for in_ch in in_channels_list[1:-1]])
+        self.v_projs_upper.append(nn.Linear(d_model, d_model, bias = False))
 
         self.conv1x1_for_c5 = conv_bn1X1(in_channels_list[-1], out_channels, stride = 1, leaky = leaky)
 
@@ -79,9 +84,9 @@ class DirectAttentionArchitecture(nn.Module):
             x[i] = q
         return x, orig_sizes
 
-    def reshape_attentioned(self, output_attentioned, batch, Number_in_keylayer, H_querylayer, W_querylayer, d_model, device, idx_query):
+    def reshape_attentioned(self, output_attentioned, batch, H_querylayer, W_querylayer, d_model, device, idx_query):
         # Rearrange output of attention to have correct position
-        output_attentioned = output_attentioned.reshape(batch, Number_in_keylayer * 4, d_model)  # (B, N, d_model) in group-order
+        output_attentioned = output_attentioned.reshape(batch, int(H_querylayer * W_querylayer), d_model)  # (B, N, d_model) in group-order
 
         # Create inverse mapping
         scatter_idx = torch.empty_like(idx_query.view(-1))
@@ -111,13 +116,15 @@ class DirectAttentionArchitecture(nn.Module):
         )
         idx = base.unsqueeze(1) + offs.unsqueeze(0)  # (Nc, 4)
         # prepare Queries via index_select()
-        fmap = fmap.index_select(1, idx.view(-1)).view(batch, number_of_groups, member_per_group, d_model)
+        fmap = fmap.index_select(1, idx.view(-1))
+        fmap = fmap.view(batch, number_of_groups, member_per_group, d_model)
         return fmap, idx
 
     def forward_detail(self, x):
         outputs = []
         idx_dict = dict()
         c5 = self.conv1x1_for_c5(x[-1])
+        x[-1] = c5
 
         Q_list, K_list_upper, V_list_upper  = [], [], []
         device = x[-1].device
@@ -125,68 +132,84 @@ class DirectAttentionArchitecture(nn.Module):
 
         #/2 because the 1x1 case is C6, but C6 is not provided as input, only C5
         H_most_upper_keylayer, W_most_upper_keylayer = x[-1].shape[2:]
-        _, Number_in_most_upper_keylayer, _, _ = x[-1].shape
-        u_c = torch.arange(H_most_upper_keylayer/2, device=device).unsqueeze(1).expand(
-            H_most_upper_keylayer/2, W_most_upper_keylayer/2).reshape(-1)
-        v_c = torch.arange(W_most_upper_keylayer/2, device=device).unsqueeze(0).expand(
-            H_most_upper_keylayer/2, W_most_upper_keylayer/2).reshape(-1)
+        Number_in_most_upper_keylayer = int(H_most_upper_keylayer * W_most_upper_keylayer)
+
+        u_c = torch.arange(H_most_upper_keylayer//2, device=device).unsqueeze(1).expand(
+            H_most_upper_keylayer//2, W_most_upper_keylayer//2).reshape(-1)
+        v_c = torch.arange(W_most_upper_keylayer//2, device=device).unsqueeze(0).expand(
+            H_most_upper_keylayer//2, W_most_upper_keylayer//2).reshape(-1)
         number_of_groups = Number_in_most_upper_keylayer // 4
 
-        # From 2 to 0 -> 2, 1, 0
-        for i in range(self.num_levels - 2, -1, -1):
-            W_current = x[i].shape[2:]
+        query_member_per_group = dict()
+        query_width = dict()
+        query_height = dict()
+
+        # From 0 ... 2
+        for i in range(self.num_levels - 1):
+            H_current, W_current = x[i].shape[2:]
+            query_width[i] = W_current
+            query_height[i] = H_current
             q = x[i].flatten(2).transpose(1, 2)  # (B, Nf, Cin_q)
             q = self.q_projs[i](q)
             _, N_q, _ = q.shape
             member_per_group = N_q // number_of_groups
+            query_member_per_group[i] = member_per_group
 
-            q, idx = self.group(q, (2 ** (i + 1)), u_c, v_c, W_current, batch, number_of_groups, member_per_group, self.d_model)
+            q, idx = self.group(q, (2 ** (self.num_levels - i)), u_c, v_c, W_current, batch, number_of_groups, member_per_group, self.d_model)
             idx_dict[i] = idx
             Q_list.append(q.view(*q.shape[:-1], self.n_heads, self.head_dim))  # (B, Nf, d)
 
-            W_current = x[i+1].shape
+            W_kv = x[i+1].shape[-1]
             kv_flat_upper = x[i + 1].flatten(2).transpose(1, 2)
             _, N_kv, _ = kv_flat_upper.shape
             member_per_group = N_kv // number_of_groups
-            kv_flat_upper, _ = self.group(kv_flat_upper, (2 ** (i + 2)), u_c, v_c, W_current, batch, number_of_groups, member_per_group, self.d_model)
-            K_list_upper.append(self.k_projs_upper[i](kv_flat_upper).view(*kv_flat_upper.shape[:-1], self.n_heads, self.head_dim))
-            V_list_upper.append(self.v_projs_upper[i](kv_flat_upper).view(*kv_flat_upper.shape[:-1], self.n_heads, self.head_dim))
 
-        # 3 Queries, 3 K/Vs, not grouped yet
-        #TODO: Continue here
+            k_flat_upper = self.k_projs_upper[i](kv_flat_upper)
+            v_flat_upper = self.v_projs_upper[i](kv_flat_upper)
 
-        # From 2 to 0 -> 2, 1, 0
-        for i in range(self.num_levels - 2, -1, -1):
+            k_flat_upper, _ = self.group(k_flat_upper, (2 ** (self.num_levels - i - 1)), u_c, v_c, W_kv, batch, number_of_groups, member_per_group, self.d_model)
+            v_flat_upper, _ = self.group(v_flat_upper, (2 ** (self.num_levels - i - 1)), u_c, v_c, W_kv, batch, number_of_groups, member_per_group, self.d_model)
+
+            K_list_upper.append(k_flat_upper.view(*k_flat_upper.shape[:-1], self.n_heads, self.head_dim))
+            V_list_upper.append(v_flat_upper.view(*v_flat_upper.shape[:-1], self.n_heads, self.head_dim))
+
+        # From 0 ... 2
+        for i in range(self.num_levels - 1):
             Q_grouped = Q_list[i]
 
             k_all_upper = list()
             v_all_upper = list()
 
-            for j in range(self.num_levels - 2, i, -1):
+            for j in range(self.num_levels - 2, i-1, -1):
                 k_all_upper.append(K_list_upper[j])
                 v_all_upper.append(V_list_upper[j])
+
+            #if self.upperandlower: Implement this if the only upper pathway showed that the direct attention idea is somewhat promising.
+            #    for j in range(i-1, -1, -1):
+            #        k_all_upper.append(K_list_upper[j])
+            #        v_all_upper.append(V_list_upper[j])
+
 
             K_grouped = torch.cat(k_all_upper, dim=2)
             V_grouped = torch.cat(v_all_upper, dim=2)
 
             scores = torch.einsum('bnqhd,bnkhd->bnqkh', Q_grouped, K_grouped)  # (B, Nk, 4, K, h)
             scores = scores / math.sqrt(self.head_dim)
-            attn = F.softmax(scores, dim=3)
-            output_attentioned = torch.einsum('bnqkh,bnkhd->bnqhd', attn, V_grouped)  # (B,Nk,4,h,d_h)  # [MHA]
+            scores = F.softmax(scores, dim=3)
+            output_attentioned = torch.einsum('bnqkh,bnkhd->bnqhd', scores, V_grouped)  # (B,Nk,4,h,d_h)  # [MHA]
 
             # ── [MHA] merge heads back to d_model ─────────────────────
-            output_attentioned = output_attentioned.reshape(batch, int(Number_in_upper_keylayer/self.quadratic_base), 4*self.quadratic_base, self.n_heads * self.head_dim)  # (B,Nk,4,d_model)  # [MHA]
+            member_per_group = query_member_per_group[i]
+            output_attentioned = output_attentioned.reshape(batch, number_of_groups, member_per_group, self.n_heads * self.head_dim)  # (B,Nk,4,d_model)  # [MHA]
 
-            output_attentioned = self.reshape_attentioned(output_attentioned, batch, Number_in_upper_keylayer, H_querylayer,
-                                                          W_querylayer, d_model, device, idx_dict[i]) # B, d_model, H_query, W_query
+            output_attentioned = self.reshape_attentioned(output_attentioned, batch, query_height[i],
+                                                          query_width[i], self.d_model, device, idx_dict[i]) # B, d_model, H_query, W_query
 
             output_attentioned = output_attentioned.flatten(2).transpose(1, 2) # B, (H_query * W_query =) N, d_model
             output_attentioned = self.final_linear[i](output_attentioned)
-            output_attentioned = output_attentioned.transpose(1, 2).contiguous().view(batch, self.d_model, H_querylayer, W_querylayer)
-
+            output_attentioned = output_attentioned.transpose(1, 2).contiguous().view(batch, self.d_model, query_height[i], query_width[i])
 
             output_attentioned = self.merge_list[i](output_attentioned)
             outputs.append(output_attentioned)
-        outputs = list(reversed(outputs))
         outputs.append(c5)
         return outputs

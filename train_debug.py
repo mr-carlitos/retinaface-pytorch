@@ -8,7 +8,7 @@ import torch.optim as optim
 import argparse
 import torch.utils.data as data
 from data import WiderFaceDetection, detection_collate, preproc, cfg_re50
-from layers.modules import MultiTaskLossWithOHEM, MultiTaskLossWithFocalLoss
+from layers.modules import MultiTaskLossWithFocalLoss
 from layers.functions.prior_box import PriorBox
 import time
 import datetime
@@ -35,7 +35,7 @@ parser.add_argument('--image_size', default=640, type=int, help='Location to sav
 parser.add_argument('--gpu_train', default=True, type=bool, help='Location to save checkpoint models')
 
 args = parser.parse_args()
-device = 2
+device = 0
 args.device = device
 torch.cuda.set_device(device)
 
