@@ -21,8 +21,8 @@ def bbox_vote(dets, nms_thresh, keep_top_k):
     merged_dets = []
     while dets.shape[0] > 0:
         # Early exit if we already have enough detections
-        if len(merged_dets) >= keep_top_k:
-            break
+        #if len(merged_dets) >= keep_top_k:
+        #    break
         # Use the first (highest scored) detection as the reference.
         ref_box = dets[0]
         xx1 = np.maximum(ref_box[0], dets[:, 0])

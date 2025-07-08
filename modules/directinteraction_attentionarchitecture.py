@@ -22,7 +22,7 @@ class DirectAttentionArchitecture(nn.Module):
             "d_model must be divisible by n_heads"
         self.head_dim = d_model // self.n_heads
 
-        #self.upperandlower = cfg['upperandlower']
+        self.upperandlower = cfg['upperandlower']
 
         # in_channels_list = [128,256,512,2048]
         self.num_levels = len(in_channels_list)
@@ -37,6 +37,10 @@ class DirectAttentionArchitecture(nn.Module):
 
         self.v_projs_upper = nn.ModuleList([nn.Linear(in_ch, d_model, bias=False) for in_ch in in_channels_list[1:-1]])
         self.v_projs_upper.append(nn.Linear(d_model, d_model, bias = False))
+
+        if self.upperandlower:
+            self.k_proj_c2 = nn.Linear(in_channels_list[0], d_model, bias=False)
+            self.v_proj_c2 = nn.Linear(in_channels_list[0], d_model, bias=False)
 
         self.conv1x1_for_c5 = conv_bn1X1(in_channels_list[-1], out_channels, stride = 1, leaky = leaky)
 
@@ -63,6 +67,16 @@ class DirectAttentionArchitecture(nn.Module):
 
         if self.phase == 'train':
             return x, orig_sizes
+
+        # Preprocessing: Bottom-up pad/crop so that each query is exactly 2× its next key (Especially necessary at Inference / Evaluation time!)
+        div = 2  # 1 or 2
+        top = x[-1]
+        _, _, H, W = top.shape
+        pad_h = (div - H % div) % div
+        pad_w = (div - W % div) % div
+        if pad_h or pad_w:
+            top = F.pad(top, (0, pad_w, 0, pad_h), mode='replicate')
+        x[-1] = top
 
         for i in range(self.num_levels - 2, -1, -1):
             q = x[i]  # e.g. C2, C3, C4, C5 in turn
@@ -126,7 +140,7 @@ class DirectAttentionArchitecture(nn.Module):
         c5 = self.conv1x1_for_c5(x[-1])
         x[-1] = c5
 
-        Q_list, K_list_upper, V_list_upper  = [], [], []
+        Q_list, K_list, V_list  = [], [], []
         device = x[-1].device
         batch, _ , _, _ = x[-1].shape
 
@@ -170,33 +184,52 @@ class DirectAttentionArchitecture(nn.Module):
             k_flat_upper, _ = self.group(k_flat_upper, (2 ** (self.num_levels - i - 1)), u_c, v_c, W_kv, batch, number_of_groups, member_per_group, self.d_model)
             v_flat_upper, _ = self.group(v_flat_upper, (2 ** (self.num_levels - i - 1)), u_c, v_c, W_kv, batch, number_of_groups, member_per_group, self.d_model)
 
-            K_list_upper.append(k_flat_upper.view(*k_flat_upper.shape[:-1], self.n_heads, self.head_dim))
-            V_list_upper.append(v_flat_upper.view(*v_flat_upper.shape[:-1], self.n_heads, self.head_dim))
+            K_list.append(k_flat_upper.view(*k_flat_upper.shape[:-1], self.n_heads, self.head_dim))
+            V_list.append(v_flat_upper.view(*v_flat_upper.shape[:-1], self.n_heads, self.head_dim))
+
+        k_flat_c2 = None
+        v_flat_c2 = None
+        if self.upperandlower:
+            W_kv = x[0].shape[-1]
+            kv_flat_c2 = x[0].flatten(2).transpose(1, 2)
+            _, N_kv, _ = kv_flat_c2.shape
+            member_per_group = N_kv // number_of_groups
+            k_flat_c2 = self.k_proj_c2(kv_flat_c2)
+            v_flat_c2 = self.v_proj_c2(kv_flat_c2)
+
+            k_flat_c2,_ = self.group(k_flat_c2, (2 ** (self.num_levels)), u_c, v_c, W_kv, batch, number_of_groups, member_per_group, self.d_model)
+            v_flat_c2,_ = self.group(v_flat_c2, (2 ** (self.num_levels)), u_c, v_c, W_kv, batch, number_of_groups, member_per_group, self.d_model)
+
+            k_flat_c2 = k_flat_c2.view(*k_flat_c2.shape[:-1], self.n_heads, self.head_dim)
+            v_flat_c2 = v_flat_c2.view(*v_flat_c2.shape[:-1], self.n_heads, self.head_dim)
+
 
         # From 0 ... 2
         for i in range(self.num_levels - 1):
             Q_grouped = Q_list[i]
 
-            k_all_upper = list()
-            v_all_upper = list()
+            k_all = list()
+            v_all = list()
 
             for j in range(self.num_levels - 2, i-1, -1):
-                k_all_upper.append(K_list_upper[j])
-                v_all_upper.append(V_list_upper[j])
+                k_all.append(K_list[j])
+                v_all.append(V_list[j])
 
-            #if self.upperandlower: Implement this if the only upper pathway showed that the direct attention idea is somewhat promising.
-            #    for j in range(i-1, -1, -1):
-            #        k_all_upper.append(K_list_upper[j])
-            #        v_all_upper.append(V_list_upper[j])
+            if self.upperandlower: #Implement this if the only upper pathway showed that the direct attention idea is somewhat promising.
+                for j in range(i-2, -1, -1):
+                    k_all.append(K_list[j])
+                    v_all.append(V_list[j])
+                if i > 0:
+                    k_all.append(k_flat_c2)
+                    v_all.append(v_flat_c2)
 
+            K_grouped = torch.cat(k_all, dim=2)
+            V_grouped = torch.cat(v_all, dim=2)
 
-            K_grouped = torch.cat(k_all_upper, dim=2)
-            V_grouped = torch.cat(v_all_upper, dim=2)
-
-            scores = torch.einsum('bnqhd,bnkhd->bnqkh', Q_grouped, K_grouped)  # (B, Nk, 4, K, h)
+            scores = torch.einsum('bnqhd,bnkhd->bnqkh', Q_grouped, K_grouped)
             scores = scores / math.sqrt(self.head_dim)
             scores = F.softmax(scores, dim=3)
-            output_attentioned = torch.einsum('bnqkh,bnkhd->bnqhd', scores, V_grouped)  # (B,Nk,4,h,d_h)  # [MHA]
+            output_attentioned = torch.einsum('bnqkh,bnkhd->bnqhd', scores, V_grouped)
 
             # ── [MHA] merge heads back to d_model ─────────────────────
             member_per_group = query_member_per_group[i]

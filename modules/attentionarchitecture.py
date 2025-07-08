@@ -124,7 +124,7 @@ class AttentionArchitecture(nn.Module):
         pad_h = (div - H % div) % div
         pad_w = (div - W % div) % div
         if pad_h or pad_w:
-            top = F.pad(top, (0, pad_w, 0, pad_h), mode='replicate')
+            top = F.pad(top, (0, pad_w, 0, pad_h), mode='constant')
         x[-1] = top
 
         for i in range(self.num_levels - 2, -1, -1):
@@ -137,7 +137,7 @@ class AttentionArchitecture(nn.Module):
             pad_h = max(0, Ht - Hq)
             pad_w = max(0, Wt - Wq)
             if pad_h or pad_w:
-                q = F.pad(q, (0, pad_w, 0, pad_h), mode='replicate')
+                q = F.pad(q, (0, pad_w, 0, pad_h), mode='constant')
 
             # crop bottom/right if over‐sized, just to be safe at evaluation / inference, since we cannot assume, that our input is 640 x 640 and that we hence have nice, square feature map sizes
             crop_h = max(0, q.size(2) - Ht)
