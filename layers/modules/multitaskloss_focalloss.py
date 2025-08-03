@@ -88,16 +88,47 @@ class MultiTaskLossWithFocalLoss(nn.Module):
 
         conf_data = conf_data.view(-1, self.num_classes)
         conf_t = conf_t.view(-1)
-        targets_one_hot = (conf_t.unsqueeze(1) == torch.arange(self.num_classes, device=conf_t.device).unsqueeze(0)).float()
+        #targets_one_hot = (conf_t.unsqueeze(1) == torch.arange(self.num_classes, device=conf_t.device).unsqueeze(0)).float()
+
+        #  just the 'face' logits
+        #face_logits = conf_data[:, 1]  # shape (N,)
+
+        # build a float tensor of 0/1 labels
+        #face_labels = conf_t.float()  # shape (N,)
 
         # Compute focal loss using logits directly.
-        loss_c = sigmoid_focal_loss(
-            inputs=conf_data,
-            targets=targets_one_hot,
-            alpha=self.focal_alpha,
-            gamma=self.focal_gamma,
-            reduction="sum"
-        )
+        #loss_c = sigmoid_focal_loss(
+        #    inputs=face_logits,
+        #    targets=face_labels,
+        #    alpha=self.focal_alpha,
+        #    gamma=self.focal_gamma,
+        #    reduction="sum"
+        #)
+        # Number of examples
+
+        N = conf_t.size(0)
+
+        # 1) log‐softmax
+        log_probs = F.log_softmax(conf_data, dim=1)  # (N,2)
+
+        # 2) gather log‐pt
+        log_pt = log_probs[torch.arange(N), conf_t]  # (N,)
+
+        # 3) pt itself
+        pt = log_pt.exp()  # (N,)
+
+        # 4) focal weight
+        focal_weight = (1.0 - pt).pow(self.focal_gamma)  # (N,)
+
+        alpha_factor = torch.where(
+            conf_t == 1,
+            self.focal_alpha,
+            1.0 - self.focal_alpha
+        ).to(pt.dtype)
+
+        # 5) loss
+        loss_c = -alpha_factor * focal_weight * log_pt  # (N,)
+        loss_c = loss_c.sum()
 
         # Normalize losses by the number of positive anchors
         N = max(pos.data.long().sum().float(), 1)

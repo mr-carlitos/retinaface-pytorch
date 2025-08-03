@@ -54,7 +54,7 @@ def jaccard(box_a, box_b):
     return inter / union  # [A,B]
 
 #This function computes the “intersection over foreground”
-#In data augmentation, you might want to ensure that a random crop (ROI) fully covers a ground-truth box. If the IOF is 1, it means the entire box in a lies within the box in b.
+#In data augmentation, might want to ensure that a random crop (ROI) fully covers a ground-truth box. If the IOF is 1, it means the entire box in a lies within the box in b.
 def matrix_iof(a, b):
     """
     return iof of a and b, numpy version for data augenmentation
@@ -92,7 +92,7 @@ def match_ohem(threshold_background, threshold_foreground, truths, priors, varia
     overlaps = batch_jaccard(
         truths,
         point_form(priors),
-        batch_size=1000  # Adjust this value based on your GPU memory
+        batch_size=1000  # Adjust this value based on GPU memory
     )
 
     # 2. For Each Ground Truth, Find Its Best-Matching Prior
@@ -199,7 +199,7 @@ def match_focal_loss(threshold_background, truths, priors, variances, labels, lo
     overlaps = batch_jaccard(
         truths,
         point_form(priors),
-        batch_size=1000  # Adjust this value based on your GPU memory
+        batch_size=1000  # Adjust this value based on GPU memory
     )
 
     # 2. For Each Ground Truth, Find Its Best-Matching Prior

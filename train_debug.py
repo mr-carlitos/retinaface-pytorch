@@ -35,7 +35,7 @@ parser.add_argument('--image_size', default=640, type=int, help='Location to sav
 parser.add_argument('--gpu_train', default=True, type=bool, help='Location to save checkpoint models')
 
 args = parser.parse_args()
-device = 0
+device = 3
 args.device = device
 torch.cuda.set_device(device)
 
@@ -79,7 +79,7 @@ if args.resume_net is not None:
     net.load_state_dict(new_state_dict)
 
 if gpu_train:
-    device_ids = [device]  # list the GPU indices you want to use
+    device_ids = [device]
     net = torch.nn.DataParallel(net, device_ids=device_ids).cuda(device_ids[0])
 else:
     net = net.cuda()

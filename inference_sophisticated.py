@@ -19,15 +19,15 @@ from utils.box_utils import decode, clip_boxes
 
 parser = argparse.ArgumentParser(description='Retinaface')
 
-parser.add_argument('-m', '--trained_model', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-06-18_FULL/FULL_final.pth',
+parser.add_argument('-m', '--trained_model', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/2025-06-22_NOPOSENC/NOPOSENC_final.pth',
                     type=str, help='Trained state_dict file path to open')
-parser.add_argument('--cpu', action="store_true", default=True, help='Use cpu inference')
+parser.add_argument('--cpu', action="store_true", default=False, help='Use cpu inference')
 parser.add_argument('--confidence_threshold', default=0.02, type=float, help='confidence_threshold')
 parser.add_argument('--top_k', default=5000, type=int, help='top_k')
 parser.add_argument('--nms_threshold', default=0.4, type=float, help='nms_threshold')
 parser.add_argument('--keep_top_k', default=750, type=int, help='keep_top_k')
 parser.add_argument('-s', '--save_image', action="store_true", default=True, help='show detection results')
-parser.add_argument('--vis_thres', default=0.4, type=float, help='visualization_threshold')
+parser.add_argument('--vis_thres', default=0.9, type=float, help='visualization_threshold')
 parser.add_argument('--origin_size', default=False, type=bool, help='Whether use origin image size to evaluate')
 parser.add_argument('--flipping', default=True, type=bool, help='if we do flipping during evaluation pipeline')
 args = parser.parse_args()
@@ -94,7 +94,8 @@ if __name__ == '__main__':
     max_size = 2150  # Maximum allowed size for the longer side.
 
     #image_name = "7_Cheering_Cheering_7_50"
-    image_name = "0_Parade_marchingband_1_379"
+    #image_name = "0_Parade_marchingband_1_379"
+    image_name = "2_Demonstration_Political_Rally_2_329"
     image_path = "./example-pictures/input/"+image_name+".jpg"
     img_raw = cv2.imread(image_path, cv2.IMREAD_COLOR)
 
@@ -194,16 +195,16 @@ if __name__ == '__main__':
     for b in final_dets:
         if b[4] < args.vis_thres:
             continue
-        text = "{:.4f}".format(b[4])
+        #text = "{:.4f}".format(b[4])
         b = list(map(int, b))
         cv2.rectangle(img_raw, (b[0], b[1]), (b[2], b[3]), (0, 0, 255), 2)
         cx = b[0]
         cy = b[1] + 12
-        cv2.putText(img_raw, text, (cx, cy),
-                    cv2.FONT_HERSHEY_DUPLEX, 0.5, (255, 255, 255))
+        #cv2.putText(img_raw, text, (cx, cy),
+        #            cv2.FONT_HERSHEY_DUPLEX, 0.5, (255, 255, 255))
     # save image
     save_path = "./example-pictures/output/"
     if not os.path.exists(save_path):
         os.makedirs(save_path)
-    name = save_path + str(image_name) + "_processed.jpg"
+    name = save_path + str(image_name) + "_crossattnoposemb_processed.jpg"
     cv2.imwrite(name, img_raw)

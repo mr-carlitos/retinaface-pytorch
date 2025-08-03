@@ -7,7 +7,7 @@ from config import default
 import argparse
 
 
-# Paths to your model files
+# Paths to model files
 symbol_file = 'resnet-50-symbol.json'
 params_file = 'resnet-50-0000.params'
 

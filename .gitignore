@@ -19,3 +19,4 @@ widerface_evaluate/build/
 *.log
 *.yml
 DEPRECATED/training
+*.zip

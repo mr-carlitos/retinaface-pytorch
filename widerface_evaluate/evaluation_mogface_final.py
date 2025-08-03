@@ -1,3 +1,4 @@
+##### CARLOS CODE FILE ########
 """
 CARLOS CODE FILE
 I modified the original evaluation script so that we don't use the fixed intervals of 0.001 (from 0 to 1), but that we sort along the confidence scores.
@@ -531,7 +532,7 @@ def compute_map(pred, gt_path):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-p', '--pred', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/other_trainings/2025-06-30_DIRECT/like-mxnet')
+    parser.add_argument('-p', '--pred', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/CROSS_POSITIVE/like-mxnet')
     parser.add_argument('-g', '--gt', default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/widerface_evaluate/ground_truth')
     #parser.add_argument('-i', '--iter', default='140')
     #parser.add_argument('-d', '--det_result_txt', default=None)

@@ -1,5 +1,4 @@
-#!/usr/bin/env python
-# evaluate_all.py  –  Compare every model in save-checkpoints
+##### CARLOS CODE FILE ########
 import os
 import argparse
 import matplotlib.pyplot as plt
