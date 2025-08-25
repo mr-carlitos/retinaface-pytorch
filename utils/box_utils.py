@@ -1,3 +1,6 @@
+##### CARLOS and biubug6 CODE FILE ########
+# I mainly provided clip_boxes() here. The rest comes from biubug6: https://github.com/biubug6/Pytorch_Retinaface/blob/master/utils/box_utils.py
+
 import torch
 import numpy as np
 

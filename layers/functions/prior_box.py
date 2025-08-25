@@ -1,3 +1,7 @@
+##### CARLOS CODE FILE ########
+### Based on the work of biubug6, I verified and extended his/her version of prior_box.py: https://github.com/biubug6/Pytorch_Retinaface/blob/master/layers/functions/prior_box.py
+### Especially vectorized_forward() was provided by me.
+
 import torch
 from itertools import product as product
 import numpy as np

@@ -1,4 +1,5 @@
 ##### CARLOS CODE FILE ########
+# Training script with gradient accumulation technique, this script was used to train all model variants within this master thesis on rolf.
 from __future__ import print_function
 import os
 import torch

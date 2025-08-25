@@ -9,29 +9,36 @@ class NeckMode(Enum):
     # Instead of using a FPN, apply only a 1x1conv on each backbone feature map
     NO_FPN = auto()
 
-    # Uses a new neck mechanism with pooling, where we first have a similar mechanism like FPN (but with Deconvolution instead of NN upsampling), and then lower levels inform
-    # upper layers via pooling and element-wise addition
+    # RQ2 a.)
     ONLY_DECONV = auto()
 
+    # RQ2 b.)
     ONlY_POOL = auto()
 
+    # RQ2 c.)
     DECONV_POOLING = auto()
 
+    # RQ2 d.)
     NEIGHBOURHOOD_DECONV_POOLING = auto()
 
+    # RQ3
     CROSSATTENTION = auto()
 
+    # IGNORED: Alternative cross-attention module, results from this variant were ignored when writing the thesis, since the results were not very good.
     DIRECT_CROSSATTENTION = auto()
 
 
 class PositionalMode(Enum):
+    # Learned positional embeddings
     POS_EMBEDDING_QKV = auto()
 
+    # 2D sinus/cosinus positional encoding for Q and K maps
     POS_ENCODING_QKV = auto()
 
+    # No positional information
     NOTHING = auto()
 
-
+# helper function
 def transform_layer_config(return_layers):
     layer_dict = dict()
     layer_list = return_layers.copy()

@@ -1,4 +1,6 @@
 # CARLOS CODE FILE: INSPIRED FROM FURKANS PAPER
+# We compute the TPDR-FPDPI evaluation results (and plot) for a specific model variant.
+
 import matplotlib.pyplot as plt
 import numpy as np
 from torchvision.ops import box_iou

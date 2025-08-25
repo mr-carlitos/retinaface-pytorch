@@ -1,4 +1,6 @@
 ##### CARLOS CODE FILE ########
+### We compute the AP and mAP evaluation results for a group of model variants and then also provide Precision-Recall plots for this group.
+
 import os
 import argparse
 import matplotlib.pyplot as plt
@@ -97,7 +99,7 @@ def evaluate_model(pred_dir: str, facebox_list, event_list, file_list, hard_gt_l
     return aps
 
 
-def main(checkpoints_root: str, gt_path: str, out_dir: str):
+def main(checkpoints_root: str, gt_path: str, out_dir: str, name_prefix):
     # 1) Collect all model folders
     model_dirs = sorted(
         d for d in (os.path.join(checkpoints_root, f) for f in os.listdir(checkpoints_root))
@@ -125,12 +127,20 @@ def main(checkpoints_root: str, gt_path: str, out_dir: str):
 
     # 3) Plot one figure per setting
     os.makedirs(out_dir, exist_ok=True)
-    colour_cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
+    custom_colors = [
+    'blue',
+    'orange',
+    'pink',
+    'green',
+    'black',
+    'grey',
+    'brown'
+]
 
     for idx, setting in enumerate(settings):
         plt.figure(figsize=(7, 5))
         for jdx, (model_name, (recall, precision, ap)) in enumerate(curves_per_setting[setting].items()):
-            colour = colour_cycle[jdx % len(colour_cycle)]
+            colour = custom_colors[jdx]
             plt.plot(recall, precision, label=model_name + " with AP " + "%.4f" % ap, linewidth=2, color=colour)
 
         plt.grid(True, linestyle='--', alpha=.6)
@@ -139,19 +149,41 @@ def main(checkpoints_root: str, gt_path: str, out_dir: str):
         plt.ylim(0, 1)
         plt.legend(loc='lower left', fontsize=9)
         plt.tight_layout()
-        plt.savefig(os.path.join(out_dir, f'precision_recall_{setting}.png'), dpi=300)
+        plt.savefig(os.path.join(out_dir, f'{name_prefix}_precision_recall_{setting}.png'), dpi=300)
         plt.close()
         print(f'✓ saved {setting} plot → {out_dir}/precision_recall_{setting}.png')
+
+        # --- log-scale (1 - Precision) vs Recall ---
+        plt.figure(figsize=(7, 5))
+        for jdx, (model_name, (recall, precision, ap)) in enumerate(curves_per_setting[setting].items()):
+            colour = custom_colors[jdx]
+            one_minus_p = 1-precision
+            # to avoid zero (log undefined), clip to a tiny positive
+            one_minus_p = np.clip(one_minus_p, 1e-8, None)
+            plt.plot(recall, one_minus_p,
+                     label=model_name + " with AP " + "%.4f" % ap,
+                     linewidth=2, color=colour)
+        plt.yscale('log')
+        plt.grid(True, linestyle='--', alpha=.6)
+        plt.xlabel('Recall')
+        plt.ylabel('1 - Precision (log scale)')
+        plt.legend(loc='lower right', fontsize=9)
+        plt.tight_layout()
+        fn_log = os.path.join(out_dir, f'{name_prefix}_log1p_recall_{setting}.png')
+        plt.savefig(fn_log, dpi=300)
+        plt.close()
+        print(f'✓ saved {setting} log(1–P) plot → {fn_log}')
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Compare all RetinaFace checkpoints.')
     parser.add_argument('--checkpoints', '-c',
-                        default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/deconv_pool',
+                        default='/Users/carlosk/Documents/Programmieren/master-thesis-programming/retinaface-pytorch/save-checkpoints/baseline',
                         help='Folder that contains individual checkpoint dirs & Where to store the generated PNGs.')
     parser.add_argument('--gt', '-g',
-                        default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/widerface_evaluate/ground_truth',
+                        default='/Users/carlosk/Documents/Programmieren/master-thesis-programming/retinaface-pytorch/widerface_evaluate/ground_truth',
                         help='Path to WiderFace ground-truth directory.')
+    name_prefix = "baseline"
 
     args = parser.parse_args()
-    main(args.checkpoints, args.gt, args.checkpoints)
+    main(args.checkpoints, args.gt, args.checkpoints, name_prefix)

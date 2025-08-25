@@ -1,5 +1,6 @@
 ##### CARLOS CODE FILE ########
-### This code was never used for my final experiments
+### IGNORED: Alternative cross-attention module, results from this variant were ignored when writing the thesis, since the results were not very good.
+### This code was NOT used for my final experiments
 
 import torch
 import torch.nn as nn

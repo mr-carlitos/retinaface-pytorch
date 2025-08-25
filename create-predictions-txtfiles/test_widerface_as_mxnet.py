@@ -1,7 +1,19 @@
 ##### CARLOS CODE FILE ########
 ## Based on mxnet implementation of RetinaFace
-# retinaface.py: https://github.com/deepinsight/insightface/blob/master/detection/retinaface/retinaface.py#L573
-# test_widerface.py: https://github.com/deepinsight/insightface/blob/master/detection/retinaface/test_widerface.py
+
+'''
+DESCRIPTION
+
+This code file was used to generate the prediction .txt files for a given model variant. For each image in the validation set, we save the bounding box coordinates and
+faceness scores in a .txt file. This file is called "test_widerface_as_mxnet.py", because it follows exactly the same approach as the original RetinaFace implementation (which
+was done in the MXNET library). So we perform e.g., box voting, scaling, flipping operations.
+
+Important reference code files:
+1. retinaface.py: https://github.com/deepinsight/insightface/blob/master/detection/retinaface/retinaface.py#L573
+2. test_widerface.py: https://github.com/deepinsight/insightface/blob/master/detection/retinaface/test_widerface.py
+3. biubug6's test_widerface.py: https://github.com/biubug6/Pytorch_Retinaface/blob/master/test_widerface.py
+'''
+
 from __future__ import print_function
 import sys, os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))

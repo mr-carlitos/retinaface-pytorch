@@ -1,3 +1,7 @@
+### CARLOS and biubug6 code file
+# First part was implemented mostly by biubug6, but I implemented GroupNorm instead of BatchNorm.
+# I then also adapted in the second half of the code the implementation of the classical FPN
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -111,3 +115,4 @@ class FPN(nn.Module):
         final_outputs = list(reversed(final_outputs))
         final_outputs.append(last_layer_output)
         return final_outputs
+    ##### CARLOS CODE ENDS HERE #######################

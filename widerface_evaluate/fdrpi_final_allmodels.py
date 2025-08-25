@@ -1,4 +1,5 @@
 ##### CARLOS CODE FILE ########
+### We compute the TPDR-FPDPI evaluation results for a group of model variants and then also provide TPDR-FPDPI plots for this group.
 import os
 import argparse
 import matplotlib.pyplot as plt
@@ -84,7 +85,7 @@ def evaluate_model(pred_dir: str, facebox_list, event_list, file_list, hard_gt_l
     return curves
 
 
-def main(checkpoints_root: str, gt_path: str, out_dir: str):
+def main(checkpoints_root: str, gt_path: str, out_dir: str, name_prefix):
     # 1) Collect all model folders
     model_dirs = sorted(
         d for d in (os.path.join(checkpoints_root, f) for f in os.listdir(checkpoints_root))
@@ -112,21 +113,34 @@ def main(checkpoints_root: str, gt_path: str, out_dir: str):
 
     # 3) Plot one figure per setting
     os.makedirs(out_dir, exist_ok=True)
-    colour_cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
+    custom_colors = [
+        'blue',
+        'orange',
+        'pink',
+        'green',
+        'black',
+        'grey',
+        'brown'
+    ]
 
     for idx, setting in enumerate(settings):
         plt.figure(figsize=(7, 5))
         for jdx, (model_name, (DR, FDPI)) in enumerate(curves_per_setting[setting].items()):
-            colour = colour_cycle[jdx % len(colour_cycle)]
-            plt.semilogx(FDPI, DR, label=model_name, linewidth=2, color=colour)
+            colour = custom_colors[jdx]
+            dr_at = None
+            for target in (1e-2,):
+                idx = np.argmin(np.abs(FDPI - target))
+                dr_at = DR[idx]
+                print(f"TPDR@FPDPI={target:.0e} — {setting} / {model_name}: {dr_at:.4f}")
+            plt.semilogx(FDPI, DR, label=model_name + " with TPDR@FPDPI=10^-2: " +str(round(dr_at,3)), linewidth=2, color=colour)
 
         plt.grid(True, linestyle='--', alpha=.6)
         plt.xlabel('False Positive Detections Per Image')
         plt.ylabel('True Positive Detection Rate')
         plt.ylim(0, 1)
-        plt.legend(loc='lower left', fontsize=9)
+        plt.legend(loc='lower right', fontsize=9)
         plt.tight_layout()
-        plt.savefig(os.path.join(out_dir, f'fpdpi-tpdr_{setting}.png'), dpi=300)
+        plt.savefig(os.path.join(out_dir, f'{name_prefix}_fpdpi-tpdr_{setting}.png'), dpi=300)
         plt.close()
         print(f'✓ saved {setting} plot → {out_dir}/fpdpi-tpdr_{setting}.png')
 
@@ -134,11 +148,11 @@ def main(checkpoints_root: str, gt_path: str, out_dir: str):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Compare all RetinaFace checkpoints.')
     parser.add_argument('--checkpoints', '-c',
-                        default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/save-checkpoints/deconv_pool',
+                        default='/Users/carlosk/Documents/Programmieren/master-thesis-programming/retinaface-pytorch/save-checkpoints/crossatt',
                         help='Folder that contains individual checkpoint dirs & Where to store the generated PNGs.')
     parser.add_argument('--gt', '-g',
-                        default='/home/user/ckirchdorfer/carlos-workspace/Pytorch_Retinaface/widerface_evaluate/ground_truth',
+                        default='/Users/carlosk/Documents/Programmieren/master-thesis-programming/retinaface-pytorch/widerface_evaluate/ground_truth',
                         help='Path to WiderFace ground-truth directory.')
-
+    name_prefix = "crossatt"
     args = parser.parse_args()
-    main(args.checkpoints, args.gt, args.checkpoints)
+    main(args.checkpoints, args.gt, args.checkpoints, name_prefix)

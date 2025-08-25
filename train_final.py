@@ -1,4 +1,5 @@
 ##### CARLOS CODE FILE ########
+# Final training script, can be used if you don't need gradient accumulation because your GPUs have enough memory
 from __future__ import print_function
 import os
 import torch

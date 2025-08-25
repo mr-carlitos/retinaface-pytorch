@@ -1,6 +1,7 @@
 ##### CARLOS CODE FILE ########
 ## Description: This file contains the PyTorch ResNet-50 implementation based on ImageNet 11k (this file was generated using the mmdnn library where the mxnet based ResNet-50 implementation was used as input)
-## In this file, my contribution was to program the extract_features() function (see function description for more details)
+## In this file, my contribution was to program the extract_features_after_stage() and extract_features_as_mxnet() functions
+## The rest is just generated code by the mmdnn library
 
 import numpy as np
 import torch
@@ -144,8 +145,9 @@ class KitModel(nn.Module):
             return self.extract_features_as_mxnet(x)
 
 
-    #Based on the forward function() I implemented this extract_features() function. It has the job of extracting the feature maps exactly as the authors did in their mxnet implementation.
-    # Dimensions are: {4: (1, 128, 160, 160), 8: (1, 256, 80, 80), 16: (1, 512, 40, 40), 32: (1, 2048, 20, 20)} when returning stage2_unit1_relu2, stage3_unit1_relu2, stage4_unit1_relu2, relu1
+    #Based on the forward function() I implemented this extract_features_as_mxnet() function. It has the job of extracting the feature maps exactly as the RetinaFace authors did in their mxnet implementation.
+    # Original code from the RetinaFace authors: https://github.com/deepinsight/insightface/blob/master/detection/retinaface/rcnn/symbol/symbol_common.py
+    # Dimensions are: {C2: (128, 160, 160), C3: (256, 80, 80), C4: (512, 40, 40), C5: (2048, 20, 20)} when returning stage2_unit1_relu2, stage3_unit1_relu2, stage4_unit1_relu2, relu1
     def extract_features_as_mxnet(self, x):
 
         x = self.bn_data(x)
@@ -349,6 +351,8 @@ class KitModel(nn.Module):
 
         return stage2_unit1_relu2, stage3_unit1_relu2, stage4_unit1_relu2, relu1
 
+    # Instead of returning intermediate feature maps for each stage, we output in this function just the final feature map for each stage.
+    # Dimensions are: {C2: (256, 160, 160), C3: (512, 80, 80), C4: (1024, 40, 40), C5: (2048, 20, 20)}
     def extract_features_after_stage(self, x):
 
         x = self.bn_data(x)

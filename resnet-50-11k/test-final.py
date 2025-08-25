@@ -1,5 +1,5 @@
 ##### CARLOS CODE FILE ########
-
+## This is a file where I experimented around with the imported ImageNet-11k backbone, you can ignore this
 import numpy as np
 import torch
 from PIL import Image

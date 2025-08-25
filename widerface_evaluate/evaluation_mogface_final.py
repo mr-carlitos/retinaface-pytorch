@@ -1,6 +1,9 @@
 ##### CARLOS CODE FILE ########
 """
 CARLOS CODE FILE
+
+We compute the AP and mAP evaluation results for a specific model variant.
+
 I modified the original evaluation script so that we don't use the fixed intervals of 0.001 (from 0 to 1), but that we sort along the confidence scores.
 """
 

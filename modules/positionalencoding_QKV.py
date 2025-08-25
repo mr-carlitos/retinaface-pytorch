@@ -1,11 +1,15 @@
 ### CARLOS CODE FILE. Inspired by DETR: https://github.com/facebookresearch/detr/blob/main/models/position_encoding.py
+'''
+
+This file provides fixed sinus/cosinus positional encodings (FixedSinePositionalEncodingQKV) and learned positional embeddings (LearnedPositionalEncodingQKV)
+'''
 import torch
 import math
 import torch.nn as nn
 
 class FixedSinePositionalEncodingQKV(nn.Module):
     """
-    Resolution-agnostic 2-D sine/cos positional encoding for Q and K/V maps.
+    2D sine/cos positional encoding for Q and K maps.
     """
     def __init__(self, channels, height, width, temperature=10000):
         super().__init__()
@@ -38,8 +42,8 @@ class FixedSinePositionalEncodingQKV(nn.Module):
 
 class LearnedPositionalEncodingQKV(nn.Module):
     """
-    Resolution-aware but *learned* 2-D positional encoding for
-    Q and K/V  feature maps."""
+    Learned 2-D positional encoding for
+    Q and K  feature maps."""
 
     def __init__(self, channels, height, width):
         super().__init__()
