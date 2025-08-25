@@ -1,4 +1,5 @@
 #CARLOS CODE FILE: MODIFIED THE ORIGINAL retinaface.py FILE SO THAT MY MODULES FIT IN
+# General core framework code for our RetinaFace baseline
 import torch
 import torch.nn as nn
 import torchvision.models._utils as _utils

@@ -1,5 +1,5 @@
 ##### CARLOS CODE FILE ########
-
+# This file incorporates alternative neck architectures that use cross-scale attention to enhance feature maps (RQ3)
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -8,6 +8,15 @@ from data import PositionalMode
 from modules.net import conv_bn
 from modules.positionalencoding_QKV import FixedSinePositionalEncodingQKV, LearnedPositionalEncodingQKV
 
+'''
+AttentionArchitecture
+
+A custom architecture for face detection that incorporates cross-scale attention to enhance feature maps.
+It modifies the traditional Feature Pyramid Network (FPN) by using attention mechanisms, 
+    including positional encoding and different strategies for query, key, and value projections. The queries come from layer i, while keys and values come from i-1 and i+1, if
+    possible (e.g., when enhancing C2, we cannot take keys and values from the lower level, since there is no lower level).
+
+'''
 class AttentionArchitecture(nn.Module):
     def __init__(self, in_channels_list, out_channels, phase, cfg):
         super(AttentionArchitecture,self).__init__()
@@ -97,7 +106,12 @@ class AttentionArchitecture(nn.Module):
         for _ in in_channels_list[:-1]:
             self.merge_list.append(conv_bn(out_channels, out_channels, leaky=leaky))
 
-
+    '''
+    forward():
+    
+    Forward pass through the attention architecture. If we are in train mode, we don't need to crop, since we have stricter assumptions regarding the image input resolution.
+    During evaluation though, we do not know the resolution of the image, hence we sometimes need to do cropping.
+    '''
     def forward(self, x):
         x, orig_sizes = self.preprocessing(x)
         neck_computation = self.forward_detail(x)
@@ -107,6 +121,15 @@ class AttentionArchitecture(nn.Module):
         self.crop_back(neck_computation, orig_sizes)
         return neck_computation
 
+    '''
+    preprocessing():
+    
+    Preprocess input feature maps for attention computation.
+    Handles padding and cropping operations to ensure proper spatial alignment
+    between query and key feature maps. Essential for maintaining 2x scale
+    relationships between adjacent pyramid levels during inference.
+    
+    '''
     def preprocessing(self, x):
         # x = OrderedDict, 128,256,512,2048(,256)
         x = list(x.values())
@@ -128,8 +151,8 @@ class AttentionArchitecture(nn.Module):
         x[-1] = top
 
         for i in range(self.num_levels - 2, -1, -1):
-            q = x[i]  # e.g. C2, C3, C4, C5 in turn
-            k = x[i + 1]  # the immediately finer map (C3, C4, C5)
+            q = x[i]
+            k = x[i + 1]
             B, C, Hq, Wq = q.shape
             _, _, Hk, Wk = k.shape
             Ht, Wt = 2 * Hk, 2 * Wk
@@ -147,21 +170,35 @@ class AttentionArchitecture(nn.Module):
             x[i] = q
         return x, orig_sizes
 
+    '''
+    reshape_attentioned():
+    
+    Reshape attention output back to spatial feature map format.
+
+    Rearranges the grouped attention output to restore the original spatial
+    structure of the feature map, handling the inverse mapping from grouped
+    queries back to their spatial positions.
+    
+    '''
     def reshape_attentioned(self, output_attentioned, batch, Number_in_keylayer, H_querylayer, W_querylayer, d_model, device, idx_query):
         # Rearrange output of attention to have correct position
-        output_attentioned = output_attentioned.reshape(batch, Number_in_keylayer * 4, d_model)  # (B, N, d_model) in group-order
+        output_attentioned = output_attentioned.reshape(batch, Number_in_keylayer * 4, d_model)
 
         # Create inverse mapping
         scatter_idx = torch.empty_like(idx_query.view(-1))
         scatter_idx[idx_query.view(-1)] = torch.arange(len(scatter_idx), device=device)
-        #torch.set_printoptions(profile="full")
-        #print(scatter_idx)
         output_attentioned = output_attentioned[:, scatter_idx, :]
 
         # reshape to spatial map
-        output_attentioned = output_attentioned.transpose(1, 2).view(batch, d_model, H_querylayer, W_querylayer)  # (B, d_model, Hf, Wf)
+        output_attentioned = output_attentioned.transpose(1, 2).view(batch, d_model, H_querylayer, W_querylayer)
         return output_attentioned
 
+    '''
+    crop_back():
+    
+    Crop processed feature maps back to their original sizes. Essential for inference/evaluation phase to ensure feature maps match
+    the exact dimensions expected by subsequent detection heads and anchor matching procedures.
+    '''
     def crop_back(self, outputs, orig_sizes):
         # cropping back: important at evaluation / inference, since we cannot assume, that our input is 640 x 640 and that we hence have nice, square feature map sizes
         # We need to have feature maps exactly of the sizes as the ResNet gave us, in order to have correct anchor matching, after the network produces the predictions
@@ -169,11 +206,19 @@ class AttentionArchitecture(nn.Module):
             H_orig, W_orig = orig_sizes[i]
             outputs[i] = out[:, :, :H_orig, :W_orig]
 
+    '''
+    Prepare query tensors for grouped attention computation.
+    Groups queries spatially to enable efficient cross-scale attention by creating
+    2x2 (or 4x4) query neighborhoods that correspond to single key positions.
+    This enables the attention mechanism to process multiple query positions
+    simultaneously for each key position.
+    '''
+
     def prepare_queries(self, Q, device, H_keylayer, W_keylayer, W_querylayer, batch, Number_in_keylayer, d_model):
-        # compute index groups for 2x2 mapping
+        # compute index groups for patch
         u_c = torch.arange(int(H_keylayer/self.base_number), device=device).unsqueeze(1).expand(int(H_keylayer/self.base_number), int(W_keylayer/self.base_number)).reshape(-1)
         v_c = torch.arange(int(W_keylayer/self.base_number), device=device).unsqueeze(0).expand(int(H_keylayer/self.base_number), int(W_keylayer/self.base_number)).reshape(-1)
-        base = 2 * self.base_number * u_c * W_querylayer + 2 * self.base_number * v_c  # (Nc,)
+        base = 2 * self.base_number * u_c * W_querylayer + 2 * self.base_number * v_c
 
         offs_q = torch.tensor(
             [ii + jj * W_querylayer for jj in range(2*self.base_number) for ii in range(2*self.base_number)],
@@ -181,23 +226,37 @@ class AttentionArchitecture(nn.Module):
         )
         idx_query = base.unsqueeze(1) + offs_q.unsqueeze(0)  # (Nc, 4)
         # prepare Queries via index_select()
-        Q_grouped = Q.index_select(1, idx_query.view(-1)).view(batch, int(Number_in_keylayer/self.quadratic_base), 4*self.quadratic_base, d_model)  # (B, Nc, 4, d)
+        Q_grouped = Q.index_select(1, idx_query.view(-1)).view(batch, int(Number_in_keylayer/self.quadratic_base), 4*self.quadratic_base, d_model)
         return Q_grouped, idx_query, u_c, v_c
 
+    '''
+    forward_detail()
+    
+    Sophisticated forward computation implementing the attention mechanism and performs the core attention-based feature enhancement through cross-scale
+    interactions. Processes features from coarse to fine scales, applying multi-head attention between query features and their corresponding
+    key-value features from adjacent scales.
+    
+    The method supports several operational modes:
+    - Pyramidal: Uses top-down processing with feature reuse
+    - Horizontal: Processes all levels independently using backbone features  
+    - Upper/Lower: Incorporates features from both higher and lower resolutions
+    - Receptive field expansion: Increases the spatial context for attention
+    '''
     def forward_detail(self, x):
         outputs = []
+        # PHASE 1: FEATURE PROJECTION - Convert input features to Q, K, V representations
 
         # 1) Project Q, K_lower, V_lower for each level, K_upper and V_upper can only be calculated from the highest level for now
         Q_list, K_list_upper, V_list_upper, K_list_lower, V_list_lower = [], [], [], [], []
 
         if self.pyramidial:
-            kv_flat = x[-1].flatten(2).transpose(1, 2)  # (B, Nc, Cin_kv)
+            kv_flat = x[-1].flatten(2).transpose(1, 2)
             K_highestlevel = self.k_projs_upper[0](kv_flat)
             V_highestlevel = self.v_projs_upper[0](kv_flat)
 
         for i in range(self.num_levels-1):
-            q_flat = x[i].flatten(2).transpose(1, 2)  # (B, Nf, Cin_q)
-            Q_list.append(self.q_projs[i](q_flat))  # (B, Nf, d)
+            q_flat = x[i].flatten(2).transpose(1, 2)
+            Q_list.append(self.q_projs[i](q_flat))
 
             if self.upperandlower:
                 if i > 0:
@@ -210,29 +269,31 @@ class AttentionArchitecture(nn.Module):
                 K_list_upper.append(self.k_projs_upper[i](kv_flat_upper))
                 V_list_upper.append(self.v_projs_upper[i](kv_flat_upper))
 
-        # From 3 to 0 -> 3, 2, 1, 0
+        # PHASE 2: ATTENTION COMPUTATION - Process from coarse to fine (top-down)
         for i in range(self.num_levels - 2, -1, -1):
-            # from (batch ,C_in ,H, W) to (B, Nf, d_model)
-            Q = Q_list[i]  # (B, Nf, d_model)
-
+            # Get Query for current level
+            Q = Q_list[i]
+            # Determine Keys and Values based on processing mode
             if self.pyramidial:
-
+                # Pyramidal mode: reuse computed features from previous iterations
                 if i == self.num_levels - 2:
                     K_upper = K_highestlevel
                     V_upper = V_highestlevel
                 else:
-                    K_upper = outputs[-1].flatten(2).transpose(1, 2)  # (B, Nc, Cin_kv)
+                    # Subsequent iterations: use output from previous level
+                    K_upper = outputs[-1].flatten(2).transpose(1, 2)
                     k_upp_ind = self.num_levels-2-i
                     K_upper = self.k_projs_upper[k_upp_ind](K_upper)
-                    V_upper = outputs[-1].flatten(2).transpose(1, 2)  # (B, Nc, Cin_kv)
+                    V_upper = outputs[-1].flatten(2).transpose(1, 2)
                     v_upp_ind = self.num_levels-2-i
                     V_upper = self.v_projs_upper[v_upp_ind](V_upper)
             else:
-                K_upper = K_list_upper[i]  # (B, Nc, d)
-                V_upper = V_list_upper[i]  # (B, Nc, d)
+                #  Horizontal mode: use pre-computed projections from backbone features
+                K_upper = K_list_upper[i]
+                V_upper = V_list_upper[i]
 
-            #[MHA] split into h heads
-            Q = Q.view(*Q.shape[:-1], self.n_heads, self.head_dim)  # (B,N,h,d_h)  # [MHA]
+            #split into Multiple Attention Heads
+            Q = Q.view(*Q.shape[:-1], self.n_heads, self.head_dim)
             K_upper = K_upper.view(*K_upper.shape[:-1], self.n_heads, self.head_dim)  # [MHA]
             V_upper = V_upper.view(*V_upper.shape[:-1], self.n_heads, self.head_dim)  # [MHA]
 
@@ -241,15 +302,17 @@ class AttentionArchitecture(nn.Module):
             batch, Number_in_querylayer, _, _ = Q.shape
             _, Number_in_upper_keylayer, _, _ = K_upper.shape
 
-            H_querylayer, W_querylayer = x[i].shape[2:] # From C2 to C4 -> from 160 × 160 to 40 × 40
-            H_upper_keylayer, W_upper_keylayer = x[i + 1].shape[2:] # From C3 to C5 -> from 80 × 80 to 20 × 20
+            H_querylayer, W_querylayer = x[i].shape[2:]
+            H_upper_keylayer, W_upper_keylayer = x[i + 1].shape[2:]
             device = Q.device
 
+            # Group Queries for Efficient Attention
             Q_grouped, idx_query, u, v = self.prepare_queries(Q.view(batch, Number_in_querylayer, self.n_heads * self.head_dim) # flatten back temporarily
                                                               ,device, H_upper_keylayer, W_upper_keylayer, W_querylayer, batch, Number_in_upper_keylayer, d_model)
-            # ── [MHA] restore (h,d_h) split after grouping ─────────────
+
             Q_grouped = Q_grouped.view(batch, int(Number_in_upper_keylayer/self.quadratic_base), 4*self.quadratic_base, self.n_heads, self.head_dim)
 
+            # Add Positional Encoding to Queries (if enabled)
             if self.posembed:
                 Q_grouped = Q_grouped.view(batch, int(Number_in_upper_keylayer/self.quadratic_base), 2*self.base_number , 2*self.base_number , self.n_heads, self.head_dim)
                 q_pos_enc = self.embed_q().to(device).unsqueeze(0).unsqueeze(0).unsqueeze(4).expand(batch,
@@ -258,7 +321,7 @@ class AttentionArchitecture(nn.Module):
                 Q_grouped = Q_grouped + q_pos_enc
                 Q_grouped = Q_grouped.view(batch, int(Number_in_upper_keylayer/self.quadratic_base), 4*self.quadratic_base, self.n_heads, self.head_dim)
 
-            # [MHA]: (B,Nk,upper-per-group,h,d_h)
+            # Group Upper Keys and Values
             if self.increase_receptive_field:
                 H_upper, W_upper = x[i + 1].shape[2:]
                 base_lo = (self.base_number * u) * W_upper + (self.base_number * v)
@@ -290,22 +353,22 @@ class AttentionArchitecture(nn.Module):
                 K_grouped = K_upper.unsqueeze(2)
                 V_grouped = V_upper.unsqueeze(2)
 
+            # Incorporate Lower Resolution Features (if enabled)
             if self.upperandlower:
                 #Keys/Values from lower layer need their own grouping -> hence also their own index vector
                 if i > 0:
                     H_lower, W_lower = x[i - 1].shape[2:]
                     base_lo = (4 * u * self.base_number) * W_lower + (4 * v * self.base_number)
-                    # Create 4x4 neighborhood offsets for lower resolution keys
+
                     offs_l = torch.tensor(
                         [ii + jj*W_lower for jj in range(4*self.base_number) for ii in range(4*self.base_number)],
                         device=device
                     )
                     idx_lo = (base_lo.unsqueeze(1) + offs_l).reshape(-1)
-
-                    # gather lower keys per coarse cell
                     K_lower_grouped = K_list_lower[i-1].index_select(1, idx_lo).view(batch, int(Number_in_upper_keylayer/self.quadratic_base), 16*self.quadratic_base, self.n_heads, self.head_dim)
                     V_lower_grouped = V_list_lower[i-1].index_select(1, idx_lo).view(batch, int(Number_in_upper_keylayer/self.quadratic_base), 16*self.quadratic_base, self.n_heads, self.head_dim)
 
+                    # Add positional encoding to lower keys (if enabled)
                     if self.posembed:
                         K_lower_grouped = K_lower_grouped.view(batch, int(Number_in_upper_keylayer/self.quadratic_base), 4*self.base_number,4*self.base_number , self.n_heads, self.head_dim)
                         kv_pos_enc = self.embed_lower().to(device).unsqueeze(0).unsqueeze(0).unsqueeze(4).expand(batch,
@@ -317,38 +380,45 @@ class AttentionArchitecture(nn.Module):
                         ## I decided to only positionally encode the Keys, not the Values
                         K_lower_grouped = K_lower_grouped.view(batch, int(Number_in_upper_keylayer/self.quadratic_base), 16*self.quadratic_base, self.n_heads, self.head_dim)
 
+                    # Concatenate upper and lower keys/values
                     K_grouped = torch.cat([K_grouped, K_lower_grouped], dim = 2)
                     V_grouped = torch.cat([V_grouped, V_lower_grouped], dim = 2)
 
-            # c) compute scores and column-wise softmax (over queries)
-
-            # Qg : (B, Nk, 4,  h, d_h)
-            # Kg : (B, Nk, K,  h, d_h)   (K = 1 or 17)
-            scores = torch.einsum('bnqhd,bnkhd->bnqkh', Q_grouped, K_grouped)  # (B, Nk, 4, K, h)
+            # compute scores and column-wise softmax (over queries)
+            scores = torch.einsum('bnqhd,bnkhd->bnqkh', Q_grouped, K_grouped)
             scores = scores / math.sqrt(self.head_dim)
 
             if (self.upperandlower and i>0) or (self.increase_receptive_field):
                 attn = F.softmax(scores, dim=3)
             else:
+                #WARNING: One should make sure that this line never gets executed! Mathematically this is not correct (feedback from Professor Günther)
                 attn = F.softmax(scores, dim=2)
 
-            output_attentioned = torch.einsum('bnqkh,bnkhd->bnqhd', attn, V_grouped)  # (B,Nk,4,h,d_h)  # [MHA]
+            # Apply Attention Weights to Values
+            output_attentioned = torch.einsum('bnqkh,bnkhd->bnqhd', attn, V_grouped)
 
-            # ── [MHA] merge heads back to d_model ─────────────────────
-            output_attentioned = output_attentioned.reshape(batch, int(Number_in_upper_keylayer/self.quadratic_base), 4*self.quadratic_base, self.n_heads * self.head_dim)  # (B,Nk,4,d_model)  # [MHA]
+            # ── [MHA] merge heads back to d_network ─────────────────────
+            output_attentioned = output_attentioned.reshape(batch, int(Number_in_upper_keylayer/self.quadratic_base), 4*self.quadratic_base, self.n_heads * self.head_dim)
 
+            # Reshape Back to Spatial Feature Map
             output_attentioned = self.reshape_attentioned(output_attentioned, batch, Number_in_upper_keylayer, H_querylayer,
-                                                          W_querylayer, d_model, device, idx_query) # B, d_model, H_query, W_query
+                                                          W_querylayer, d_model, device, idx_query)
 
-            output_attentioned = output_attentioned.flatten(2).transpose(1, 2) # B, (H_query * W_query =) N, d_model
+            output_attentioned = output_attentioned.flatten(2).transpose(1, 2)
+
+            #Final projection (after having obtained the attentioned output)
             output_attentioned = self.final_linear[i](output_attentioned)
             output_attentioned = output_attentioned.transpose(1, 2).contiguous().view(batch, d_model, H_querylayer, W_querylayer)
 
+            # Optionally apply the query-focused residual connection
             if self.query_focused_residualconn:
                 Q_new = Q.view(batch, Number_in_querylayer, self.n_heads * self.head_dim).transpose(1, 2).contiguous().view(batch, d_model, H_querylayer, W_querylayer)
                 output_attentioned = output_attentioned + Q_new
 
+            # Final Convolution and Normalization
             output_attentioned = self.merge_list[i](output_attentioned)
             outputs.append(output_attentioned)
+
+        # Return Results in Correct Order
         outputs = list(reversed(outputs))
         return outputs

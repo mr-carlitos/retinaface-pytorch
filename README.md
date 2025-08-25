@@ -2,6 +2,7 @@
 
 This README provides a quick overview of the source code for the master thesis 'Going Beyond Feature Pyramids in Face Detection'. 
 The implementation is based on the work of the GitHub user biubug6 and the base repo is the following one: https://github.com/biubug6/Pytorch_Retinaface. The original RetinaFace code, as provided by the RetinaFace authors, can be found here: https://github.com/deepinsight/insightface/tree/master/detection/retinaface.
+Please note that while writing the code, I called the transposed convolution operations mostly "deconvolution".
 
 ## General overview 
 
@@ -26,6 +27,10 @@ The implementation is based on the work of the GitHub user biubug6 and the base 
 
 ## Download links
 
-In this section, I provide some general PyTorch models / modules, which I uploaded to Google Drive (I will remove them in November):
+In this section, I provide some general PyTorch models / modules, which I uploaded to Google Drive (once you downloaded them, I will remove them in November I think):
 
 - ImageNet-11k-based ResNet-50 backbone: https://drive.google.com/file/d/1En2qTowyxAFfnV2fY7irKG_4B7htmudc/view?usp=sharing
+- Baseline model: https://drive.google.com/drive/folders/14_pnqDzqdiR1T66wGcpzyeLdCCfJzfEH?usp=sharing
+- CROSS_NO_POSEMB: https://drive.google.com/drive/folders/1FqNiXecVW8IRN0R77QMkW3exEcbEbtwe?usp=sharing
+- TCONV_POOLING: https://drive.google.com/drive/folders/1lCUCFTOmhium_1EfhMRVcTHf0xD5g8AS?usp=sharing
+- TCONV_Only: https://drive.google.com/drive/folders/1_5SQZIOwNWWSH2JGNEEIQpcbemIFCbgl?usp=sharing

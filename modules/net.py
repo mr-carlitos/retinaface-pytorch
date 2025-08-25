@@ -1,4 +1,5 @@
 ### CARLOS and biubug6 code file
+# Implementation of SSH context module and classical FPN
 # First part was implemented mostly by biubug6, but I implemented GroupNorm instead of BatchNorm.
 # I then also adapted in the second half of the code the implementation of the classical FPN
 
