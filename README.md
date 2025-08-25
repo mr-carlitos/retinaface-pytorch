@@ -1,7 +1,7 @@
 # Source code of Carlos Kirchdorfer's master's thesis
 
 This README provides a quick overview of the source code for the master thesis 'Going Beyond Feature Pyramids in Face Detection'. 
-The implementation is based on the work of the GitHub user biubug6 and the base repo is the following one: https://github.com/biubug6/Pytorch_Retinaface
+The implementation is based on the work of the GitHub user biubug6 and the base repo is the following one: https://github.com/biubug6/Pytorch_Retinaface. The original RetinaFace code, as provided by the RetinaFace authors, can be found here: https://github.com/deepinsight/insightface/tree/master/detection/retinaface.
 
 ## General overview 
 
