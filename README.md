@@ -3,6 +3,7 @@
 This README provides a quick overview of the source code for the master thesis 'Going Beyond Feature Pyramids in Face Detection'. 
 The implementation is based on the work of the GitHub user biubug6 and the base repo is the following one: https://github.com/biubug6/Pytorch_Retinaface. The original RetinaFace code, as provided by the RetinaFace authors, can be found here: https://github.com/deepinsight/insightface/tree/master/detection/retinaface.
 Please note that while writing the code, I called the transposed convolution operations mostly "deconvolution".
+All files which I either created entirely by myself or which I modified (mostly based on the implementation from biubug6) are highlighted with a comment at the top of the file (e.g, I write "CARLOS CODE FILE")
 
 ## General overview 
 

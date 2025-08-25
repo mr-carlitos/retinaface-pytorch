@@ -1,4 +1,3 @@
-##### This code was mostly written by https://github.com/biubug6/Pytorch_Retinaface
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

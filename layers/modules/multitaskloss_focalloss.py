@@ -1,5 +1,5 @@
 ##### CARLOS CODE FILE ########
-
+# I provided a focal loss implementation instead of OHEM
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
